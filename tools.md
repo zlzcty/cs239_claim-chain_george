@@ -47,15 +47,15 @@ Records follow [evidence.md](evidence.md). All references identify an ID and rev
 
 `execute_python` accepts code or a configured skill ID, declared artifact inputs, and a resource allocation. It returns output artifacts, exit status, errors, and usage. Apply policy P3. Configured Python extraction skills do not need per-task approval. Agent-written code is optional and disabled unless the restricted execution environment exists.
 
-Scheduler operations are application code, not Investigator tools: validate/enqueue tasks selected by the Lead, atomically claim ready work, reserve/reconcile budget, renew leases, checkpoint progress, retry, and cancel. Workers can submit proposals and results but cannot enqueue agent tasks or raise allocations. The scheduler validates dependency graphs and rejects cycles. See [protocol.md](protocol.md).
+Scheduler operations are application code, not Investigator tools: validate/enqueue tasks selected by the Lead, atomically claim ready work, reserve/reconcile budget, checkpoint progress, retry, and cancel. Remote-worker leases apply only if a distributed adapter is added. Workers can submit proposals and results but cannot enqueue agent tasks or raise allocations. The scheduler validates dependency graphs and rejects cycles. See [protocol.md](protocol.md).
 
 Tool wrappers check run/task allocations before calls and enforce timeouts, byte limits, and allowed actions. Shared limits apply to reviewer tools as well as Investigator tools.
 
 ## Suggested implementation order
 
-1. SQLite/artifact storage, evidence read/write, HTTP retrieval, and located extraction. PyMuPDF and an HTML extractor are suitable starting points.
-2. OCR and page-image inspection for scans; Tesseract/OCRmyPDF are options.
-3. Search/catalog adapters, exact and fuzzy quote search, and a two-worker queue.
-4. Browser fallback with Playwright where rendering is needed; edition alignment and graph views after basic evidence handling works.
+1. Define versioned schemas for domain messages and evidence records. Implement local fixture loading, SQLite/artifact storage, and located text access.
+2. Implement the agent loop, a two-worker in-process queue, report snapshots, and version-bound review. Run the acceptance cases in [evaluation.md](evaluation.md).
+3. Add HTTP retrieval, PDF extraction, OCR, search, and catalog adapters as needed. PyMuPDF, Tesseract/OCRmyPDF, and a browser fallback are possible choices.
+4. Add a remote A2A adapter only if required; validate it against the pinned schema. Add edition alignment and graph views after the basic audit works.
 
 Treat external providers as adapters: record provider-specific access failures without requiring one catalog or archive to be available for every run.

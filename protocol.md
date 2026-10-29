@@ -1,23 +1,12 @@
 # Agent protocol and scheduling
 
-## Transport boundary
+## Execution and transport boundary
 
-Target: A2A 1.0.0, JSON-RPC 2.0 binding. Pin the implementation's SDK/schema to that version rather than relying on a changing `latest` specification. This document defines the application contract; JSON examples below are domain payloads, not complete A2A envelopes. Validate the transport adapter against the pinned A2A schema before claiming conformance.
+The first deployment runs in one process with a SQLite-backed queue and up to two concurrent Investigator tasks. Agents have distinct role instructions, contexts, and tool permissions. A local runner invokes the roles through a common interface. The scheduler is application code; it enforces the queue and budget and does not make research decisions. The Lead alone selects and creates agent jobs; workers propose follow-ups. See [agent-execution.md](agent-execution.md) for role inputs, tool permissions, and the model loop.
 
-The Research Lead is the client. Investigator workers and the Review Agent expose endpoints with Agent Cards at `/.well-known/agent-card.json`. Cards declare JSON input/output and these skills:
+The local runner uses a stable `runId`, a client-generated `jobId` per job, and a distinct `attemptId` for each attempt. Store their mapping with checkpoints and results. Evidence references contain record IDs and revisions from [evidence.md](evidence.md). Pass full documents through artifact storage, not task histories. Bind review approval to the configured reviewer role in application code.
 
-- Investigator: `resolve-citation`, `compare-editions`, `search-claim-evidence`, `check-historical-record`.
-- Reviewer: `review-claim-report`.
-
-Use `SendMessage`, `GetTask`, and `CancelTask`; streaming is optional. Domain payloads use `urn:claim-chain-auditor:extension:v1`, declared by the cards and carried according to the pinned transport schema. Unsupported domain versions/actions fail validation. Keep domain fields inside the data payload, not invented A2A envelope fields.
-
-## Identity and authority
-
-One run has a stable `runId` and one A2A `contextId`. The first task can establish the context; persist it before dispatching later tasks. Each scheduled job has a client-generated `jobId`; each execution attempt has an `attemptId` and a server-issued A2A `taskId`. Store the mapping. New tasks share the context and use `referenceTaskIds` for related tasks, but scheduler dependencies are explicit domain fields. A shared context is not shared model memory or an access-control mechanism.
-
-Only the Lead selects and creates agent jobs. Investigators and the reviewer propose work. A scheduler implemented in application code enforces the queue, allocations, and worker ownership. It does not make research decisions. The application binds endpoints to configured worker/reviewer identities; a payload claiming to be a reviewer cannot grant approval. The MVP assumes trusted configured services, not arbitrary third-party agents.
-
-Messages have unique A2A message IDs. Evidence references contain record IDs and revisions from [evidence.md](evidence.md); tools resolve them from shared storage. Pass full documents through artifact storage, not task histories.
+If the course requires A2A, implement a transport adapter against a pinned A2A 1.0.0 JSON-RPC schema and validate it with that SDK. The domain payloads below are not complete wire envelopes and do not establish conformance. A distributed adapter can use Agent Cards, `SendMessage`, `GetTask`, and `CancelTask`; it maps local run/job/attempt identities to transport context/task IDs. Keep the domain schema and scheduler independent of transport. Shared context is neither shared model memory nor access authorization. Use authenticated configured endpoints before trusting a remote reviewer's identity.
 
 ## Domain actions
 
@@ -56,18 +45,18 @@ Example initial domain payload:
 }
 ```
 
-On success the adapter stores the returned A2A task/context IDs. Poll persisted task IDs; do not resend an initial instruction merely because a response is slow. A request may return a message instead of a task: validate and accept a complete synchronous domain result, or report an adapter error if it lacks a usable result. Never assume every successful response created a task.
+For a remote adapter, persist returned transport identifiers and handle both asynchronous task responses and complete synchronous results. Do not assume every successful response created a task. Validate the adapter against the pinned schema.
 
 ## Dependency queue
 
-Store jobs with `jobId`, action/input versions, research question, acceptance criteria, `dependsOn`, priority, semantic deduplication key, depth, state, allocation, attempts, owner, lease expiry, checkpoint, and result reference.
+Store jobs with `jobId`, action/input versions, research question, acceptance criteria, `dependsOn`, priority, deterministic duplicate key, depth, state, allocation, attempts, owner, checkpoint, and result reference. A distributed adapter also tracks leases.
 
 Queue states are `queued`, `ready`, `running`, `waiting_input`, `completed`, `failed`, `canceled`, and `dependency_blocked`. They are application states, separate from A2A task states.
 
 1. The Lead admits a proposed job after scope, duplicate, dependency-cycle, and budget checks. A proposal is not itself an agent task.
 2. A job becomes ready when every dependency has completed and its stated prerequisite evidence exists. Completion with an unavailable source does not satisfy a prerequisite requiring an inspected passage.
 3. Atomically claim the highest-priority ready job and reserve its allocation. Run at most two Investigator attempts at once by default. Reviewer work has a separate worker slot but consumes the same run budget.
-4. A worker renews its lease and checkpoints evidence, searches, open questions, and usage. It reads the checkpoint and evidence on resume, not an unbounded conversation transcript.
+4. A worker checkpoints evidence, searches, open questions, and usage. It reads the checkpoint and evidence on resume, not an unbounded conversation transcript.
 5. On completion, store a validated result and reconcile usage. Evaluate proposals and release newly ready jobs. Existing unrelated ready work continues while another task waits for input.
 6. Failed/canceled dependencies mark dependents `dependency_blocked`. The Lead can replace a dependency or drop the question with a recorded reason; no silent success. Unknown dependency IDs and cycles are rejected at admission.
 
@@ -75,23 +64,23 @@ Priority favors questions decisive to the claim and work that could disprove the
 
 ## Deduplication and identity merges
 
-Use a semantic key based on claim interpretation, action, normalized target identity, input revisions, question, and relevant scope. Check it atomically when admitting jobs. Share an existing job/result only if its acceptance criteria and coverage suffice. Different questions about the same book can remain separate jobs while sharing artifacts and extraction.
+Check an atomic deterministic key composed of claim/interpretation revision, action, confirmed target identity, input revisions, and canonical structured scope and parameters. Equal keys identify duplicate candidates, not proof that free-text questions or acceptance criteria are equivalent. The Lead checks whether an existing result meets the requested question, criteria, and coverage before reusing it. For differently worded or uncertain matches, the Lead may assess equivalence and record the rationale; otherwise keep jobs separate. Different questions about the same book can share artifacts and extraction.
 
 Cache bytes by hash and extraction by hash/method version. Normalize catalog IDs and URLs as identity hints; URLs and matching titles alone do not prove edition identity. The Lead resolves ambiguous merges with recorded rationale. Evidence writes use expected revisions and idempotency keys. On conflict, reread and reconcile; do not overwrite another worker's findings.
 
 ## Budgets and stopping
 
-The run record stores maximum distinct sources, deadline, optional spending cap, depth limit, and review reserve. A source is an edition/version admitted for inspection; provisional unknown-edition targets have stable source keys. Retries, pages, and multiple copies of the same edition do not add source slots. Reserve a provisional slot before retrieving an unknown target; reconcile confirmed duplicates without erasing usage history. Search snippets/catalog metadata are discovery, not inspected source evidence. Tools still enforce request, time, and byte limits for discovery calls.
+The run record stores maximum distinct sources, deadline, research cutoff, model-call limit, optional spending cap, depth limit, and review reserve. By default the cutoff is at 80% of the initial run duration and 20% of the initial model calls are reserved for drafting, review, and export. The user may configure these before a run. At cutoff, stop admitting research and cancel or checkpoint active research; begin drafting and review. New research requested by review is deferred unless the user changes the cutoff and limits; preserve an unapproved report if necessary. The reserve does not guarantee that review will finish. A source is an edition/version admitted for inspection; provisional unknown-edition targets have stable source keys. Retries, pages, and multiple copies of the same edition do not add source slots. Reserve a provisional slot before retrieving an unknown target; reconcile confirmed duplicates without erasing usage history. Search snippets/catalog metadata are discovery, not inspected source evidence. Tools still enforce request, time, and byte limits for discovery calls.
 
-Allocate from the shared remaining budget atomically; task limits cannot exceed their allocation or the run remainder. Charge actual external usage once by operation ID, including failures and retries. Canceled calls keep their incurred charges; uncertain charges stay reserved until reconciled. Review has a reserved allocation; spending it on more research requires the Lead to record that a fully reviewed result may no longer be possible. Only the user can increase run limits.
+Allocate sources, model calls, time, and any spending cap from the shared remaining budget atomically; task limits cannot exceed their allocation or the run remainder. Count all model calls, including retries and review, and record provider-reported input/output tokens and billed cost when available. A finite call count bounds usage even when token reporting is unavailable. If a spending cap is set, use conservative pre-call cost estimates and stop calls whose cost cannot be bounded; reconcile actual charges afterward. Charge actual external usage once by operation ID, including failures and retries. Canceled calls keep their incurred charges; uncertain charges stay reserved until reconciled. Review has a reserved allocation; spending it on more research requires the Lead to record that a fully reviewed result may no longer be possible. Only the user can increase run limits.
 
 When a task answers its bounded question, it returns even if the overall claim remains unresolved. It proposes branches rather than following them without permission. An unambiguous extra link is allowed only when `maxAdditionalLinks` permits it and depth/allocation allow it. At limits, preserve partial evidence and record what stopped the task. On run deadline, stop dispatch, cancel active work, and preserve any partial report as unapproved unless its exact version was already approved.
 
 ## Lifecycle, requests, and results
 
-A2A submitted/working states map to active jobs; input-required maps to `waiting_input`. Auth-required pauses only that task for an authorized access decision. The MVP never sends credentials in domain payloads. Missing access can instead end with a source request and an unresolved link. Task completion describes execution, not claim truth.
+Local jobs use the queue states above. A remote adapter maps transport states to them; input-required maps to `waiting_input`. An access request pauses only that task for an authorized access decision. The MVP never sends credentials in domain payloads. Missing access can instead end with a source request and an unresolved link. Task completion describes execution, not claim truth.
 
-An agent requests a decision only if it cannot finish its current bounded question. Otherwise it completes with proposals so it does not hold a worker while waiting for unrelated research. A decision request contains `requestId`, question, options, evidence references, and the exact missing prerequisite. The Lead responds on the same nonterminal A2A task/context with the request ID. A response adding work schedules a separate job; it does not silently expand the current allocation. Pending questions have an expiry bounded by the run deadline.
+An agent requests a decision only if it cannot finish its current bounded question. Otherwise it completes with proposals so it does not hold a worker while waiting for unrelated research. A decision request contains `requestId`, question, options, evidence references, and the exact missing prerequisite. The Lead responds to the same nonterminal local job with the request ID; a remote adapter maps that response to its transport task. A response adding work schedules a separate job; it does not silently expand the current allocation. Pending questions have an expiry bounded by the run deadline.
 
 Every completed research result contains:
 
@@ -105,22 +94,22 @@ Results are structured artifacts. The scheduler accepts completion only after va
 
 ## Review and publication
 
-The Lead persists a draft report and immutable evidence snapshot before requesting review. Review inputs name their exact versions/hashes and related task IDs. The reviewer can read originals, inspect page images, and run bounded alternate searches within its allocation. Additional Investigator work is proposed to the Lead.
+The Lead persists a draft report and immutable evidence snapshot before requesting review. Review inputs name their exact versions/hashes and related task IDs. Before receiving the draft or the Lead’s assessment, the reviewer reads the original claim and a restricted view of the snapshot containing source identities, artifacts, passages, and citation links, then records a preliminary assessment and possible alternate explanations. Hide finding, report, and review records until the assessment is persisted; remove agent-written link rationales from this initial view. Source selection and extraction metadata may still reveal investigator assumptions, so this is not blind independent research. The reviewer then receives the draft and checks it against that assessment. It can inspect originals and page images, and proposes additional Investigator work to the Lead. Any research before cutoff uses its allocated budget; after cutoff follow the stopping rule above.
 
-The review artifact records the report reference/body hash, snapshot ID/hash, reviewer identity, checks performed, `approved`, issues, and required changes. Approval is allowed for an honestly limited or unresolved report. Report revision requests use `approved: false`; A2A task rejection is reserved for refusing an invalid or prohibited assignment.
+The review artifact records the report reference/body hash, snapshot ID/hash, reviewer identity, checks performed, `approved`, issues, and required changes. Approval is allowed for an honestly limited or unresolved report. Report revision requests use `approved: false`; task rejection is reserved for refusing an invalid or prohibited assignment.
 
-If approval needs new evidence, the reviewer completes with `approved: false` and proposals. The Lead schedules the checks, revises the snapshot/report, and creates a new review job. A clarification not changing the reviewed inputs can use input-required on the existing task. Any change to report bytes or snapshot invalidates approval for the new version. Record a finite review-round limit in run configuration (default two); unresolved corrections at that limit produce an unapproved partial report.
+If approval needs new evidence, the reviewer completes with `approved: false` and proposals. Before the research cutoff, the Lead may schedule checks, revise the snapshot/report, and create a new review job. After cutoff, new research follows the stopping rule above. A clarification not changing the reviewed inputs can use input-required on the existing task. Any change to report bytes or snapshot invalidates approval for the new version. Record a finite review-round limit in run configuration (default two); unresolved corrections at that limit produce an unapproved partial report.
 
 Before marking a report approved, application code verifies reviewer identity, exact report version/hash, snapshot hash, and approval flag. It returns those same report bytes locally. External publication additionally requires authorization under policy P2. Reviewer approval is a report-quality gate, not permission to take external actions.
 
 ## Failure, retry, and cancellation
 
 - Invalid domain fields fail before execution with a structured code and field details. Transport errors follow the pinned A2A binding. Research limitations belong in results, not JSON-RPC errors.
-- Persist an initial request's idempotency key before dispatch. The endpoint deduplicates repeat submissions to the same attempt and returns its task/result. Reusing a key with a different payload fails. Ledger/tool writes have operation keys too; do not assume exactly-once network delivery.
+- Persist an initial request's idempotency key before dispatch. The runner deduplicates repeat submissions to the same attempt and returns its task/result; a remote endpoint must provide equivalent behavior. Reusing a key with a different payload fails. Ledger/tool writes have operation keys too; do not assume exactly-once network delivery.
 - Retry transient tool failures within the existing allocation, at most two retries with bounded backoff. Permanent access errors become research limitations. A new execution attempt receives a new `attemptId`/key and references the previous task and checkpoint.
-- On lease expiry, reconcile the old attempt through `GetTask` before reassignment. If it may still run, cancel it or fence its writes before starting another. All mutable writes require the current lease token; stale workers cannot commit authoritative results. Late artifacts may be retained as unaccepted provenance.
-- Cancellation stops dispatch and requests `CancelTask` for active attempts. Until cancellation is confirmed or writes are fenced, keep ownership and allocation reserved. Preserve incurred costs and partial evidence. Canceling a prerequisite blocks its dependents.
-- Terminal A2A tasks are not resumed with new instructions. Reopening a completed or blocked research question creates a new job/task referencing the old result. A scheduler restart restores persisted queues, allocations, and task mappings before dispatching work.
+- For remote workers, reconcile an expired lease through the transport before reassignment. Cancel the old worker or fence its writes before starting another; reject stale lease tokens. Retain late artifacts only as unaccepted provenance. The single-process runner does not need distributed leases.
+- Cancellation stops dispatch and cancels local active attempts. Remote adapters request transport cancellation; until confirmed or writes are fenced, retain ownership and allocation. Preserve incurred costs and partial evidence. Canceling a prerequisite blocks its dependents.
+- Terminal jobs are not resumed with new instructions. Reopening a completed or blocked question creates a new job referencing the old result. On restart, restore the persisted queue, allocations, and checkpoints before dispatching work.
 
 ## Worked flow
 
@@ -128,5 +117,5 @@ Before marking a report approved, application code verifies reviewer identity, e
 2. Investigator A resolves its link and proposes an edition comparison; Investigator B finds that its source is unavailable and creates a local source request.
 3. The Lead admits the comparison after its edition prerequisites exist. A second proposal matching A's completed question reuses its result.
 4. Within the remaining budget, the Lead schedules a counterevidence search. It records deferred questions rather than spawning unrestricted descendants.
-5. The Lead snapshots evidence and submits a draft. The reviewer identifies a wrong-edition quotation, completes with `approved: false`, and proposes a check.
-6. The Lead schedules that check, revises the report/snapshot, and requests a new review. Only the exact approved version is returned as approved.
+5. Before the research cutoff, the reviewer independently inspects decisive sources, identifies a wrong-edition quotation, and proposes a check.
+6. If time and allocation allow, the Lead schedules that check, revises the report/snapshot, and requests a new review. After the cutoff, the check is deferred unless the user changes the limits; the result remains unapproved if the issue cannot be resolved. Only the exact approved version is returned as approved.

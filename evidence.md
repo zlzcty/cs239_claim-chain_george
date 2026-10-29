@@ -34,7 +34,9 @@ A passage retains nearby context through a locator into the same artifact. Corre
 
 ## Graph and resolution
 
-Edges point from the later citing passage to its cited source. Edge types are `explicit_citation`, `quotation`, and `inferred_borrowing`; inferred borrowing requires a stated basis and uncertain direction where applicable. Contradiction is represented as a finding about passages, not assumed to be a citation edge. Cycles are graph findings, not claim truth statuses. Dependence analysis includes work identity so edition-specific nodes do not hide a cycle.
+Edges point from the citing passage to the source it references; this direction does not establish chronology. Edge types are `explicit_citation`, `quotation`, and `inferred_borrowing`; inferred borrowing requires a stated basis and uncertain direction where applicable. Contradiction is a finding about passages, not automatically a citation edge.
+
+Detect citation cycles on edition-specific passage and link identities. Do not collapse editions into works when confirming a cycle. A work-level loop is a candidate requiring inspection, since one edition may cite a source that cites a different edition. Where a target passage or edition is unresolved, report a possible cycle with its uncertainty, not a confirmed cycle. A citation cycle alone does not prove that all support is circular: assess the evidence dependence separately. Record dates and conflicts without assuming that every citation points backward in time.
 
 Resolution statuses are `resolved`, `edition_unknown`, `source_unavailable`, `passage_not_found`, `reference_missing`, and `blocked`. Use `resolved` only when the cited target passage is located in an identified edition. Support or contradiction is a separate finding. If several limitations apply, use the earliest unresolved step (reference, edition, access, passage) as the status and retain the others in the rationale.
 

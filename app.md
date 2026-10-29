@@ -10,7 +10,7 @@ The MVP accepts public sources and non-confidential user-supplied URLs, passages
 
 Record the original claim, seed sources, and the interpretation being tested. Preserve close variants separately. Ask the user when ambiguity would change the investigation.
 
-Before starting, record date/domain/language limits, maximum citation depth, maximum distinct sources, deadline, optional spending cap, and enabled tools. Depth counts backward citation edges from a seed at depth zero; alternate searches start at depth zero and consume the same source budget. Require a finite source limit and deadline. The user can change limits during a run; record the change. Default to two Investigator workers and reserve part of the run budget for review.
+Before starting, record date/domain/language limits, maximum citation depth, maximum distinct sources, deadline, model-call limit, optional spending cap, and enabled tools. Depth counts followed citation edges from a seed at depth zero; alternate searches start at depth zero and consume the same source budget. Require a finite source limit and deadline. The user can change limits during a run; record the change. Default to two Investigator workers and 80 model calls per run. Reserve 20% of the initial time and model-call allowance for drafting, review, and export; the user can set different reserves before the run. See [protocol.md](protocol.md) for cutoff and accounting rules.
 
 ## Agents and task boundaries
 
@@ -27,7 +27,7 @@ A task has a question, evidence inputs, acceptance criteria, dependencies, and a
 3. A persistent dependency queue dispatches ready tasks to available workers. Tasks share stored sources, not conversation histories. Merge duplicate work; do not automatically merge ambiguous source identities.
 4. Investigators retrieve relevant passages, inspect context, save findings, and propose bounded follow-ups. Independent tasks run in parallel; dependent tasks wait for their stated prerequisites.
 5. Stop a branch at its answered question, depth limit, repeated citation, unavailable source, or exhausted allocation. A primary source can end provenance tracing but does not by itself settle truth. Other branches continue within the run limits.
-6. The Lead drafts a report against an immutable evidence snapshot. The reviewer approves that exact version or requests corrections. Changed reports or snapshots require another review.
+6. The Lead drafts a report against an immutable evidence snapshot. Before reading the draft, the reviewer independently records an assessment of decisive passages and potential alternate explanations. It then checks the draft and approves that exact version or requests corrections. Changed reports or snapshots require another review.
 7. Return the approved report locally. If review cannot finish, return an explicitly unapproved partial report with the reason. External publication follows the action permissions in policy.md.
 
 ## Evidence and output
@@ -44,4 +44,4 @@ The report contains the original and interpreted claim, an answer with evidence 
 
 ## Acceptance cases
 
-Use small source sets with known answers: a valid chain, a circular chain, a wrong-edition quotation, and an inaccessible source. Check exact locations and honest limitations. Also verify that parallel branches converging on one source reuse its extraction, and that a changed report cannot reuse an earlier approval.
+Use the replayable cases and comparison plan in [evaluation.md](evaluation.md). Check citation locations and uncertainty, including a real cycle, an apparent work-level cycle across editions, an inaccessible source, a misleading quotation, and converging branches. Verify that changing the report invalidates approval.

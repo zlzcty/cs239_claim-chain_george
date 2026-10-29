@@ -1,47 +1,21 @@
 # Claim Chain Auditor
 
-## Purpose and scope
+## Current MVP
 
-Audit one explicit claim by tracing citations, checking the passages they point to, and making bounded searches for earlier wording or independent evidence. Report the earliest source found within the search scope, how the claim changed, and whether the inspected evidence supports it. Finding an early source does not establish the claim's origin or truth.
+The application audits a claim against a supplied local corpus. It runs a Research Lead, up to two concurrent Investigators, and a Reviewer through configurable OpenAI-compatible chat completions. A reachable model endpoint and model ID are required, along with an API key when the provider requires one. The roles receive separate prompts and fresh contexts. The model cannot call tools: the runner loads sources, schedules jobs, validates quoted text, stores events, and creates reports.
 
-The MVP accepts public sources and non-confidential user-supplied URLs, passages, PDFs, and text files. It does not provide confidentiality controls. It does not contact people, buy sources, or scan an archive without a question.
+The corpus contains source identities and located passages, with optional citation target IDs. The agents can inspect only those supplied passages. There is no web search, URL retrieval, PDF extraction, OCR, catalog lookup, record search, arbitrary code execution, or remote worker support. The included corpora are examples; the Great Wall source notes describe the curated excerpts and their limits.
 
-## Run input
+## Run behavior
 
-Record the original claim, seed sources, and the interpretation being tested. Preserve close variants separately. Ask the user when ambiguity would change the investigation.
+The Lead proposes at most four source checks per planning wave. The runner admits only known, unattempted source IDs, dispatches at most two at once, and allows up to three planning waves. A check handles one source; dependencies must refer to completed findings. Unavailable sources create local source-request ledger entries. Failed jobs do not block unrelated work. The runner records uninspected citation targets and local-corpus limitations.
 
-Before starting, record date/domain/language limits, maximum citation depth, maximum distinct sources, deadline, model-call limit, optional spending cap, and enabled tools. Depth counts followed citation edges from a seed at depth zero; alternate searches start at depth zero and consume the same source budget. Require a finite source limit and deadline. The user can change limits during a run; record the change. Default to two Investigator workers and 80 model calls per run. Reserve 20% of the initial time and model-call allowance for drafting, review, and export; the user can set different reserves before the run. See [protocol.md](protocol.md) for cutoff and accounting rules.
+Every model response is validated against a Pydantic schema. An invalid response gets at most one correction call. Calls, including corrections, count against the run limit. The runner reserves ten calls for preliminary review and up to two draft/review rounds, including one correction attempt per response; research capacity also reserves calls for planning and investigations. The default limits are 24 attempted calls, eight sources, 120 seconds per request, and 600 seconds for the run. The minimum call budget is 14. The runner permits at most two report versions; the Reviewer cannot request more research during final review.
 
-## Agents and task boundaries
+The reviewer first assesses the evidence snapshot without Investigator findings or a draft, then receives the draft in a later fresh context. The runner verifies that decisive passage IDs and quotations refer to supplied, inspected text. Approval is stored against report and snapshot hashes. `python -m claim_chain --verify RUN_DIRECTORY` checks those exact bytes. Interrupted runs receive no approval and preserve partial artifacts.
 
-- **Research Lead:** selects questions, creates all agent tasks, decides proposed follow-ups, and drafts the report.
-- **Investigator:** resolves one citation link or bounded source question: identify a reference, inspect a passage, compare specified editions, search for earlier/independent evidence, or check a material factual assertion. It stores evidence and proposes follow-up tasks; it does not spawn agents.
-- **Review Agent:** inspects decisive original passages and their context, checks editions and evidence dependencies, and tests an alternate explanation or trail. It can use research tools and propose Investigator tasks. It approves a specific report version or lists required corrections.
+## Report contents
 
-A task has a question, evidence inputs, acceptance criteria, dependencies, and an allocation from the run budget. By default it resolves one link. The Lead may permit one further unambiguous link within that allocation. Ambiguity, branching, or a substantial new question produces a task proposal.
+The Markdown report records the claim, assessment, evidence passages, citation graph, earliest attestation found in the inspected corpus when established, and limitations. Earliest attestation is not a claim of origin or proof of truth. `review.json` records approval and hashes; `snapshot.json` records the evidence view; `ledger.sqlite` stores run events. The application also saves the input corpus.
 
-## Execution
-
-1. Store seed artifacts; extract located text and citation candidates. Use OCR for scans and retain page images.
-2. The Lead selects tasks for promising citation trails and searches that could challenge them.
-3. A persistent dependency queue dispatches ready tasks to available workers. Tasks share stored sources, not conversation histories. Merge duplicate work; do not automatically merge ambiguous source identities.
-4. Investigators retrieve relevant passages, inspect context, save findings, and propose bounded follow-ups. Independent tasks run in parallel; dependent tasks wait for their stated prerequisites.
-5. Stop a branch at its answered question, depth limit, repeated citation, unavailable source, or exhausted allocation. A primary source can end provenance tracing but does not by itself settle truth. Other branches continue within the run limits.
-6. The Lead drafts a report against an immutable evidence snapshot. Before reading the draft, the reviewer independently records an assessment of decisive passages and potential alternate explanations. It then checks the draft and approves that exact version or requests corrections. Changed reports or snapshots require another review.
-7. Return the approved report locally. If review cannot finish, return an explicitly unapproved partial report with the reason. External publication follows the action permissions in policy.md.
-
-## Evidence and output
-
-Use the records and graph rules in [evidence.md](evidence.md). Keep full documents outside agent context; retrieve passages and nearby pages on demand. Preserve original text separately from OCR corrections, translations, and summaries.
-
-Each citation link has a resolution status: `resolved`, `edition_unknown`, `source_unavailable`, `passage_not_found`, `reference_missing`, or `blocked`. `Resolved` means the target and cited passage were located, not that they support the claim. Negative searches record their coverage; inaccessible sources are not evidence of absence.
-
-The report contains the original and interpreted claim, an answer with evidence references, decisive quotations with locations, the citation graph, the earliest source found, and unresolved links with next steps. It records search scope, budget use, and review status. Separate:
-
-- **Evidence assessment:** `supported`, `contradicted`, `mixed`, or `insufficient`, with reasons distinguishing assertions from evidence of truth.
-- **Transmission findings:** zero or more of `citation_cycle`, `quotation_altered`, `context_changed`, or `attribution_changed`, each tied to graph edges or passages.
-- **Coverage:** `within_scope_complete`, `budget_exhausted`, `access_blocked`, or `interrupted`; list all applicable limitations. Complete means selected in-scope questions were addressed, not that every possible source was searched.
-
-## Acceptance cases
-
-Use the replayable cases and comparison plan in [evaluation.md](evaluation.md). Check citation locations and uncertainty, including a real cycle, an apparent work-level cycle across editions, an inaccessible source, a misleading quotation, and converging branches. Verify that changing the report invalidates approval.
+See [README.md](README.md) for setup and command examples, [agent-execution.md](agent-execution.md) for implementation details, and the [bridge episode](episodes/bridge.md) and [Great Wall walkthrough](episodes/great-wall-hypothetical.md) for bounded examples.

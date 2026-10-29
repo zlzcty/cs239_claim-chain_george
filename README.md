@@ -82,7 +82,7 @@ python -m claim_chain.tui --base-url "$OPENAI_BASE_URL" \
   --claim 'For my local history course, I am checking the claim that Northbridge’s north bridge opened in 1920. I found it in the Northbridge anniversary leaflet (1924 print), page 2: “The north bridge opened in 1920, as recorded in the Town Register.” Trace that citation backward and identify the earliest source in the supplied material that states when the bridge opened. Keep construction completion distinct from opening to traffic. Check whether later sources rely on one another or provide independent evidence. Report what the sources support, conflicts, and what remains unknown; do not treat the earliest source as proof that the event happened.'
 ```
 
-A real-source Great Wall corpus is also included. See [the Great Wall source notes](episodes/great-wall-sources.md). These excerpts are prepared inputs.
+A real-source Great Wall corpus is also included. See [the Great Wall source notes](great-wall-sources.md). These excerpts are prepared inputs.
 
 ```sh
 python -m claim_chain.tui --corpus src/claim_chain/data/great-wall.json \

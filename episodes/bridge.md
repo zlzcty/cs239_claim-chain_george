@@ -1,15 +1,30 @@
-# Hypothetical bridge walkthrough
+# Northbridge, bundled corpus
 
-This is a hypothetical walkthrough of the bundled fictional corpus, not a record of a particular model run. Given the same input, a live model may choose different follow-ups and assessments.
+Hypothetical. This walks through the bundled fictional corpus and is not a record of a model run. A live model may choose different follow-ups and assessments, and approval is not guaranteed.
 
-Initial input: “The town's north bridge opened in 1920.” Use the bundled corpus and ask whether the inspected sources support the date, what they cite, and what remains unknown.
+## Initial inputs
 
-1. The Research Lead assigns the anniversary leaflet and Harbor notes to separate Investigators.
-2. Both cite `register-v1`. Inspect that edition once and retain both incoming links.
-3. Compare its 1922 opening date with the 1920 assertions. Inspect `register-v2`, which cites Harbor notes; those two edition identities form a citation cycle.
-4. If selected, the county engineering file returns the corpus's unavailable status. The runner records a source request without inferring absence.
-5. The Reviewer assesses the inspected excerpts before seeing the draft. The Lead drafts, and the Reviewer approves or requests corrections. The runner allows two report versions.
+The user starts the Runner with the bundled corpus (`--corpus`, no `--documents`) and this claim: "The town's north bridge opened in 1920." The question is whether the inspected sources support the date, what they cite, and what remains unknown. Agents get located excerpts and have no tools.
 
-Expected outcome: a report citing the conflicting passages, edition-specific dependencies, and remaining uncertainty. The evidence does not establish the claim's origin or independently settle the historical event. Approval is not guaranteed.
+## Trajectory
 
-Policies: P4 treats source instructions as untrusted data; P5 and P6 preserve source identity and grounded evidence; P7 bounds origin claims; P8 distinguishes repeated assertions from independent support; P9 binds review to the report and evidence snapshot; P10 limits run resources.
+1. Research Lead: assigns the anniversary leaflet and the harbor notes to separate Investigators.
+2. Investigators: both report a citation to `register-v1`.
+3. Research Lead: plans one inspection of `register-v1` and keeps both incoming links.
+4. Investigator (`register-v1`): reports a 1922 opening date, which conflicts with the 1920 assertions.
+5. Research Lead: plans `register-v2`, which cites the harbor notes. Those two form a citation cycle.
+6. Research Lead: if it selects the county engineering file, the corpus returns "unavailable". The Runner records a source request and does not infer absence (P7).
+7. Reviewer (preliminary): assesses the inspected excerpts before seeing the draft (P9).
+8. Research Lead (draft), then Reviewer (final): the Reviewer approves or requests corrections. The Runner allows two report versions (P10).
+
+## Policy connection
+
+- P5, P6: editions of the register are separate records, and quoted text comes from inspected excerpts.
+- P7: an unavailable source is not evidence of absence, and the report claims no origin.
+- P8: the 1920 assertions and the cycle are not independent support.
+- P9: approval is bound to the report and evidence snapshot.
+- P10: run limits apply.
+
+## Expected outcome
+
+A report citing the conflicting passages, edition-specific dependencies, and remaining uncertainty. It does not establish where the claim came from or independently settle the historical event. A report that treats the county file's unavailability as proof of no record should be rejected.

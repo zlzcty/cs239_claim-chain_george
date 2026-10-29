@@ -27,11 +27,17 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--model", default=os.getenv("OPENAI_MODEL"), help="Provider model ID, or OPENAI_MODEL"
     )
+    for name in ("lead", "investigator", "reviewer"):
+        result.add_argument(
+            f"--{name}-model",
+            default=os.getenv(f"OPENAI_{name.upper()}_MODEL"),
+            help=f"Model for {name}; defaults to --model",
+        )
     result.add_argument(
         "--base-url", default=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     )
     result.add_argument(
-        "--api-key-env", default="OPENAI_API_KEY", help="Environment variable holding the API key"
+        "--api-key-env", default="API_KEY", help="Environment variable holding the API key"
     )
     result.add_argument(
         "--header",
@@ -47,8 +53,18 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--output", type=Path)
     result.add_argument("--max-calls", type=int, default=24)
     result.add_argument("--max-sources", type=int, default=8)
-    result.add_argument("--timeout", type=float, default=60, help="Per-request seconds")
-    result.add_argument("--deadline", type=float, default=240, help="Whole-run seconds")
+    result.add_argument(
+        "--timeout", type=float, default=120, help="Per-request seconds (default: 120)"
+    )
+    result.add_argument(
+        "--deadline", type=float, default=600, help="Whole-run seconds (default: 600)"
+    )
+    result.add_argument(
+        "--stream",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Stream model responses for live progress; use --no-stream for incompatible providers",
+    )
     result.add_argument("--verify", type=Path, metavar="RUN_DIRECTORY")
     return result
 
@@ -71,26 +87,46 @@ async def execute(args: argparse.Namespace) -> Path:
         timeout=args.timeout,
         max_calls=args.max_calls,
         headers=headers,
+        stream=args.stream,
+        role_models={
+            role: model
+            for role, model in (
+                ("research-lead", args.lead_model),
+                ("investigator", args.investigator_model),
+                ("reviewer", args.reviewer_model),
+            )
+            if model is not None
+        },
     )
     ledger.record(
         "run_started",
         {
             "model": config.model,
+            "role_models": config.role_models,
             "claim": corpus.claim,
             "max_calls": args.max_calls,
             "max_sources": args.max_sources,
+            "request_timeout_seconds": args.timeout,
+            "deadline_seconds": args.deadline,
+            "stream": args.stream,
         },
     )
     (output / "corpus.json").write_bytes(args.corpus.read_bytes())
-    print(f"Run directory: {output}\nModel: {config.model}", flush=True)
+    print(f"Run directory: {output}\nDefault model: {config.model}", flush=True)
     client = ModelClient(config, event_callback=ledger.record)
     audit = Audit(corpus, client, ledger)
+    time_limit = asyncio.timeout(args.deadline)
     try:
-        async with asyncio.timeout(args.deadline):
+        async with time_limit:
             await audit.research(args.max_sources, args.max_calls - FINISH_CALL_RESERVE)
             await audit.finish(output)
     except BaseException as error:
-        ledger.record("run_failed", {"error_type": type(error).__name__, "calls": client.calls})
+        failure = {
+            "error_type": type(error).__name__,
+            "calls": client.calls,
+            "deadline_exceeded": time_limit.expired(),
+        }
+        ledger.record("run_failed", failure)
         (output / "status.json").write_text(
             json.dumps({"approved": False, "error_type": type(error).__name__})
         )
@@ -112,6 +148,12 @@ async def execute(args: argparse.Namespace) -> Path:
             f"Run incomplete; preserved artifacts at {output}. No approval granted.",
             file=sys.stderr,
         )
+        if time_limit.expired():
+            print(
+                f"Whole-run deadline of {args.deadline:g}s exceeded. "
+                "Increase --deadline for slower models; --timeout controls individual requests.",
+                file=sys.stderr,
+            )
         raise
     finally:
         await client.close()
@@ -134,6 +176,15 @@ def main() -> None:
             else "UNAPPROVED: missing review, rejected report, or changed bytes."
         )
         raise SystemExit(0 if valid else 1)
+    if any(
+        value is not None and not value.strip()
+        for value in (
+            args.lead_model,
+            args.investigator_model,
+            args.reviewer_model,
+        )
+    ):
+        argument_parser.error("Role model overrides cannot be empty.")
     if not args.model:
         argument_parser.error("Set --model or OPENAI_MODEL.")
     if (

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Self
@@ -24,6 +25,40 @@ MAX_CALL_ATTEMPTS = 2
 EventCallback = Callable[[str, dict[str, object]], None]
 
 
+PROGRESS_FIELDS = {
+    "jobs": "Planning source checks",
+    "source_id": "Choosing a source",
+    "question": "Defining a source question",
+    "depends_on": "Setting investigation prerequisites",
+    "rationale": "Explaining the research plan",
+    "assessment": "Assessing the claim",
+    "reasoning": "Writing the evidence assessment",
+    "quotes": "Selecting quotations",
+    "passage_id": "Selecting a passage",
+    "text": "Writing a quotation",
+    "followups": "Choosing follow-up sources",
+    "alternatives": "Considering alternative interpretations",
+    "decisive_passages": "Selecting decisive evidence",
+    "earliest_source_id": "Identifying the earliest supplied source",
+    "limitations": "Describing evidence limits",
+    "approved": "Checking the report",
+    "issues": "Identifying report issues",
+    "required_changes": "Describing required corrections",
+}
+
+
+def progress_summary(text: str) -> str:
+    """Describe JSON fields being written; this is not a model reasoning summary."""
+    previous = ""
+    summary = "Receiving response"
+    for match in re.finditer(r'"(?:\\.|[^"\\])*(?:"|\\?$)|[^\s]', text):
+        token = match.group()
+        if token == ":" and previous.startswith('"'):
+            summary = PROGRESS_FIELDS.get(previous[1:-1], summary)
+        previous = token
+    return summary
+
+
 class ClientConfig(BaseModel):
     """Connection settings. The API key is never included in event records."""
 
@@ -32,9 +67,11 @@ class ClientConfig(BaseModel):
     base_url: str = Field(min_length=1)
     api_key: SecretStr
     model: str = Field(min_length=1)
-    timeout: float = Field(default=60.0, gt=0)
+    timeout: float = Field(default=120.0, gt=0)
     max_calls: int = Field(default=24, gt=0)
     headers: dict[str, str] = Field(default_factory=dict)
+    stream: bool = False
+    role_models: dict[str, str] = Field(default_factory=dict)
 
 
 class CallBudgetExceeded(RuntimeError):
@@ -84,7 +121,7 @@ class ModelClient:
             "job_id": job_id,
             "role": role,
             "stage": stage,
-            "model": self._config.model,
+            "model": self._config.role_models.get(role, self._config.model),
         }
         previous_response = ""
         correction_message = ""
@@ -92,10 +129,7 @@ class ModelClient:
             call_id = await self._reserve_call(context, correction)
             messages = self._messages(system, user, previous_response, correction_message)
             try:
-                response = await self._sdk.chat.completions.create(
-                    model=self._config.model,
-                    messages=messages,
-                )
+                text, usage = await self._complete(messages, {**context, "call": call_id})
             except Exception as error:
                 self._events(
                     "model_error",
@@ -106,13 +140,6 @@ class ModelClient:
                     },
                 )
                 raise
-            if not response.choices:
-                self._events(
-                    "model_error", {**context, "call": call_id, "error_type": "EmptyChoices"}
-                )
-                raise ValueError("Provider returned no completion choices.")
-            text = response.choices[0].message.content or ""
-            usage = self._usage(response)
             self._events(
                 "model_response",
                 {
@@ -142,6 +169,58 @@ class ModelClient:
                     + str(error)
                 )
         raise AssertionError("unreachable")
+
+    async def _complete(
+        self, messages: list[ChatCompletionMessageParam], context: dict[str, object]
+    ) -> tuple[str, dict[str, int | None]]:
+        if self._config.stream:
+            return await self._stream(messages, context)
+        response = await self._sdk.chat.completions.create(
+            model=str(context["model"]), messages=messages
+        )
+        if not response.choices:
+            raise ValueError("Provider returned no completion choices.")
+        return response.choices[0].message.content or "", self._usage(response)
+
+    async def _stream(
+        self, messages: list[ChatCompletionMessageParam], context: dict[str, object]
+    ) -> tuple[str, dict[str, int | None]]:
+        stream = await self._sdk.chat.completions.create(
+            model=str(context["model"]),
+            messages=messages,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+        text = ""
+        usage: dict[str, int | None] = {"input_tokens": None, "output_tokens": None}
+        summary = ""
+        last_update = 0.0
+        finished = False
+        async with stream:
+            async for chunk in stream:
+                if chunk.usage is not None:
+                    usage = self._usage(chunk)
+                if not chunk.choices:
+                    continue
+                choice = chunk.choices[0]
+                if choice.finish_reason is not None:
+                    finished = True
+                content = choice.delta.content
+                if not content:
+                    continue
+                text += content
+                current_summary = progress_summary(text)
+                now = time.monotonic()
+                if current_summary != summary or now - last_update >= 1:
+                    self._events(
+                        "model_progress",
+                        {**context, "summary": current_summary, "characters": len(text)},
+                    )
+                    summary = current_summary
+                    last_update = now
+        if not finished:
+            raise ValueError("Provider stream ended without a completion finish reason.")
+        return text, usage
 
     def _system_prompt(self, role: str, stage: str, response_type: type[BaseModel]) -> str:
         allowed = {"research-lead", "investigator", "reviewer"}

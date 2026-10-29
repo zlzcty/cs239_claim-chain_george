@@ -1,0 +1,136 @@
+{
+  "claim": "For a science communication demo, trace the claim that the Great Wall of China is visible to the unaided eye from the Moon, and the related claim that an ISS photograph proves naked-eye visibility from space. Start with the BBC and Scientific American accounts, follow their supplied evidence, and distinguish the Moon from low Earth orbit and photography from unaided vision. Find the earliest relevant evidence in this corpus; do not call it the historical origin of the myth. Compare the accounts' certainty about low-orbit visibility, explain which citations repeat the same photograph, and state what these excerpts cannot establish.",
+  "seeds": [
+    "bbc-2024",
+    "sciam-2008"
+  ],
+  "sources": [
+    {
+      "id": "bbc-2024",
+      "title": "Can you see the Great Wall of China from space? — Iain Todd, BBC Sky at Night Magazine",
+      "edition": "Published 27 February 2024; web page retrieved 28 October 2026",
+      "year": 2024,
+      "passages": [
+        {
+          "id": "bbc-claim",
+          "locator": "https://www.skyatnightmagazine.com/space-science/can-you-see-great-wall-china-from-space — opening myth and qualification",
+          "text": "One space-based myth that we all have heard is the idea the Great Wall of China is the only human-made structure that can be seen from space.",
+          "cites": []
+        },
+        {
+          "id": "bbc-photo",
+          "locator": "https://www.skyatnightmagazine.com/space-science/can-you-see-great-wall-china-from-space — Leroy Chiao photo and NASA hyperlink",
+          "text": "It was captured with a digital camera and 180mm lens.",
+          "cites": []
+        },
+        {
+          "id": "bbc-nasa-link",
+          "locator": "https://www.skyatnightmagazine.com/space-science/can-you-see-great-wall-china-from-space — paragraph immediately after Chiao image",
+          "text": "The image shows central Inner Mongolia, and the yellow arrow indicates an estimated location of 42.5N 117.4E, where the wall is visible, according to this great NASA webpage on the subject.",
+          "cites": [
+            "nasa-2005"
+          ]
+        },
+        {
+          "id": "bbc-conclusion",
+          "locator": "https://www.skyatnightmagazine.com/space-science/can-you-see-great-wall-china-from-space — conclusion before Yang Liwei account",
+          "text": "So while the Great Wall of China can be photographed or observed from space using magnification, it can't be seen with the naked eye.",
+          "cites": []
+        }
+      ]
+    },
+    {
+      "id": "sciam-2008",
+      "title": "Is China's Great Wall Visible from Space? — Mara Hvistendahl, Scientific American",
+      "edition": "21 February 2008 article; retrieved 28 October 2026",
+      "year": 2008,
+      "passages": [
+        {
+          "id": "sciam-claim",
+          "locator": "https://www.scientificamerican.com/article/is-chinas-great-wall-visible-from-space/ — opening paragraph",
+          "text": "Choose a legend: The Great Wall of China is the one of the few man-made structures visible from orbit. Or, more remarkably, it's the only human artifact on Earth visible from the moon. Both are false, say astronauts and remote-sensing specialists.",
+          "cites": []
+        },
+        {
+          "id": "sciam-condition",
+          "locator": "https://www.scientificamerican.com/article/is-chinas-great-wall-visible-from-space/ — astronaut sightings paragraph",
+          "text": "Some U.S. astronauts, notably Eugene Cernan and Ed Lu, have said they've seen the wall from low orbit. But it tends to show up only in certain lighting conditions.",
+          "cites": []
+        },
+        {
+          "id": "sciam-photo",
+          "locator": "https://www.scientificamerican.com/article/is-chinas-great-wall-visible-from-space/ — Chiao photograph paragraph",
+          "text": "NASA experts later confirmed that the photo appears to show the wall. But Chiao admitted that he wasn't sure what he was seeing from space.",
+          "cites": []
+        }
+      ]
+    },
+    {
+      "id": "nasa-2005",
+      "title": "China's Wall Less Great in View from Space — NASA",
+      "edition": "9 May 2005 feature, last updated 30 November 2007; NASA archived PDF retrieved 28 October 2026",
+      "year": 2005,
+      "passages": [
+        {
+          "id": "nasa-visibility",
+          "locator": "https://www.nasa.gov/wp-content/uploads/static/history/PDFs/great_wall_less_great_from_space.pdf — PDF p. 1, opening paragraph",
+          "text": "It has become a space-based myth. The Great Wall of China, frequently billed as the only man-made object visible from space, generally isn't, at least to the unaided eye in low Earth orbit. It certainly isn't visible from the Moon.",
+          "cites": []
+        },
+        {
+          "id": "nasa-photo",
+          "locator": "https://www.nasa.gov/wp-content/uploads/static/history/PDFs/great_wall_less_great_from_space.pdf — PDF p. 1, Chiao photograph account and View larger image link",
+          "text": "Taken with a 180mm lens and a digital camera last Nov. 24, it was the first confirmed photo of the wall. A subsequent Chiao photo, taken Feb. 20 with a 400mm lens, may also show the wall.",
+          "cites": [
+            "iss-photo-2004"
+          ]
+        },
+        {
+          "id": "nasa-chiao",
+          "locator": "https://www.nasa.gov/wp-content/uploads/static/history/PDFs/great_wall_less_great_from_space.pdf — PDF p. 1, astronaut observation",
+          "text": "Chiao himself said he didn't see the wall, and wasn't sure if the picture showed it.",
+          "cites": []
+        },
+        {
+          "id": "nasa-conditions",
+          "locator": "https://www.nasa.gov/wp-content/uploads/static/history/PDFs/great_wall_less_great_from_space.pdf — PDF p. 1, Lulla interpretation",
+          "text": "\"The interpretation of this (Nov. 24) ISS photo,\" Lulla said, \"seems to be good. It appears that the right set of conditions must have occurred for this photograph to capture the small segment of the wall.\" It was a sunny day and a recent snowfall had helped make the wall more visible.",
+          "cites": []
+        },
+        {
+          "id": "nasa-moon",
+          "locator": "https://www.nasa.gov/wp-content/uploads/static/history/PDFs/great_wall_less_great_from_space.pdf — PDF p. 2, Alan Bean quotation",
+          "text": "\"The only thing you can see from the Moon is a beautiful sphere, mostly white, some blue and patches of yellow, and every once in a while some green vegetation,\" said Alan Bean, Apollo 12 astronaut. \"No man-made object is visible at this scale.\"",
+          "cites": []
+        }
+      ]
+    },
+    {
+      "id": "iss-photo-2004",
+      "title": "Astronaut Photo ISS010-E-8497 CHINA — NASA/JSC Gateway to Astronaut Photography of Earth",
+      "edition": "Image captured 24 November 2004; current catalog record retrieved 28 October 2026 (caption publication date unspecified)",
+      "year": 2004,
+      "passages": [
+        {
+          "id": "photo-caption",
+          "locator": "https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?mission=ISS010&roll=E&frame=8497 — Image Caption",
+          "text": "ISS010-E-08497 (24 November 2004) --- This picture, apparently the first verifiable photo of the Great Wall of China made from low Earth orbit, was taken by International Space Station Commander Leroy Chiao on Nov. 24, 2004.",
+          "cites": []
+        },
+        {
+          "id": "photo-altitude",
+          "locator": "https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?mission=ISS010&roll=E&frame=8497 — Image Details",
+          "text": "Spacecraft Altitude : 188 nautical miles (348km)",
+          "cites": []
+        },
+        {
+          "id": "photo-camera",
+          "locator": "https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?mission=ISS010&roll=E&frame=8497 — Camera Information",
+          "text": "Camera: Kodak DCS760c Electronic Still Camera Focal Length: 180mm",
+          "cites": []
+        }
+      ]
+    }
+  ],
+  "unavailable": []
+}

@@ -1,0 +1,1 @@
+- All the system prompts must copied exactly in each `<AGENT>.md`

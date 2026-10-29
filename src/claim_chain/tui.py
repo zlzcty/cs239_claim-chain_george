@@ -48,13 +48,17 @@ def event_summary(kind: str, body: dict[str, object]) -> str:
         return f"{body.get('role')}: {body.get('text')}"
     if kind == "plan":
         return f"Lead plan: {body.get('rationale')}"
+    if kind == "tool_call":
+        return f"{body.get('job_id')}: {body.get('name')} {body.get('arguments')}"
+    if kind == "tool_result":
+        return f"{body.get("job_id")}: {body.get("name")} returned document data"
     if kind == "review":
         return "Reviewer: " + ("APPROVED" if body.get("approved") else "CHANGES REQUESTED")
     return f"{kind.replace('_', ' ')} · {body.get('job_id', body.get('id', ''))}"
 
 
 def source_markdown(source: dict[str, object]) -> str:
-    lines = [f"### {source.get('title')} ({source.get('year')})", str(source.get("edition", ""))]
+    lines = [f"### {source.get('title')} ({source.get('year') or 'year unknown'})", str(source.get("edition", ""))]
     passages = source.get("passages", [])
     if isinstance(passages, list):
         for passage in passages:
@@ -105,7 +109,7 @@ class AuditApp(App[None]):
         self.role_models: dict[str, str] = {}
         self.progress: dict[str, str] = {}
         self.started: dict[str, float] = {}
-        self.sources: list[str] = []
+        self.sources: dict[str, str] = {}
         self.calls = 0
         self.max_calls = "?"
         self.process: asyncio.subprocess.Process | None = None
@@ -136,6 +140,8 @@ class AuditApp(App[None]):
                         markup=False,
                     )
                 yield RichLog(id="feed", wrap=True, markup=False, highlight=False)
+            with TabPane("Document tools", id="tools-tab"):
+                yield RichLog(id="tools", wrap=True, markup=False, highlight=False)
             with TabPane("Source passages", id="evidence-tab"), VerticalScroll():
                 yield Markdown("Inspected source passages will appear here.", id="evidence")
             with TabPane("Report", id="report-tab"), VerticalScroll():
@@ -239,10 +245,15 @@ class AuditApp(App[None]):
         elif kind == "source_request":
             self.jobs[job_id] = {**self.jobs.get(job_id, {}), **body, "status": "unavailable"}
             self.update_jobs()
+        elif kind in {"tool_call", "tool_result"}:
+            text = event_summary(kind, body)
+            if kind == "tool_result":
+                text += "\n" + str(body.get("result", ""))
+            self.query_one("#tools", RichLog).write(text)
         elif kind == "source_inspected":
-            self.sources.append(source_markdown(body))
+            self.sources[str(body.get("id"))] = source_markdown(body)
             self.run_worker(
-                self.query_one("#evidence", Markdown).update("\n\n---\n\n".join(self.sources))
+                self.query_one("#evidence", Markdown).update("\n\n---\n\n".join(self.sources.values()))
             )
         elif kind == "report":
             self.report_seen = True

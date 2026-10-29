@@ -1,3 +1,4 @@
+from claim_chain.provider import ToolSession
 import asyncio
 import json
 from collections.abc import Callable
@@ -84,6 +85,8 @@ class FakeClient:
         validator: Callable[[T], None] | None = None,
         *,
         job_id: str,
+        tools: ToolSession | None = None,
+        call_limit: int | None = None,
     ) -> T:
         self.calls += 1
         assert role == "investigator"
@@ -121,6 +124,8 @@ class FakeWorkflowClient:
         validator: Callable[[T], None] | None = None,
         *,
         job_id: str,
+        tools: ToolSession | None = None,
+        call_limit: int | None = None,
     ) -> T:
         self.calls += 1
         if stage == "plan":
@@ -300,6 +305,8 @@ async def test_provider_failure_leaves_independent_work_running(
             validator: Callable[[T], None] | None = None,
             *,
             job_id: str,
+        tools: ToolSession | None = None,
+        call_limit: int | None = None,
         ) -> T:
             if job_id == "inspect:alpha":
                 await started.wait()
@@ -356,6 +363,8 @@ async def test_dispatch_propagates_cancellation_to_all_workers(tmp_path: Path) -
             validator: Callable[[T], None] | None = None,
             *,
             job_id: str,
+        tools: ToolSession | None = None,
+        call_limit: int | None = None,
         ) -> T:
             running.add(job_id)
             if len(running) == 2:

@@ -8,7 +8,7 @@ The runtime uses the OpenAI Python SDK with configurable OpenAI-compatible chat 
 
 The Research Lead receives a local source catalog and run results, then returns a bounded plan. Two Investigators run local source checks concurrently and return assessments with quotations; the runner validates quotes and dispatches at most three plan waves. Dependent Investigators receive only their named prerequisites’ original passages and accepted findings. An Investigator provider or validation failure is recorded against its job; independent jobs continue, while dependent jobs remain blocked. Whole-run cancellation still stops active workers.
 
-The reviewer gets the evidence snapshot first and the report in a later fresh context. The reviewer has no tools or function calling. There are no model-accessible tools in this MVP; the runner alone loads the local corpus, stores events in SQLite, enforces dependencies and limits, writes artifacts, and verifies report/snapshot hashes.
+The reviewer gets the evidence snapshot first and the report in a later fresh context. In excerpt mode there are no model-accessible tools. In document mode, Investigators and the Reviewer's preliminary assessment call `list_sources`, `search_source` and `read_source` through a native tool loop (at most 8 rounds per request, each round counted against the call limit); the Lead and final review have none. The runner alone loads the local corpus, stores events in SQLite, enforces dependencies and limits, writes artifacts, and verifies report/snapshot hashes.
 
 ## Target design
 

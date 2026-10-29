@@ -27,9 +27,13 @@ python -m claim_chain --verify runs/<run-id>
 
 ## Evidence input
 
-`--claim` is free-form: include the course context, what the claim means, relevant distinctions, investigation scope, and the question you want answered. The agents can trace only sources already in the corpus; they do not search the web or fetch documents. Use `--corpus path/to/corpus.json` to provide those sources. The JSON fields are `claim`, `seeds` (source IDs to start from), `sources` (records with `id`, `title`, `edition`, `year`, and `passages`), and optional `unavailable` IDs. Each passage has an `id`, `locator`, `text`, and optional `cites` containing source IDs. `--claim` replaces the corpus claim while keeping its sources.
+`--claim` is free-form: include the course context, what the claim means, relevant distinctions, investigation scope, and the question you want answered. The agents can trace only sources already in the corpus; they do not search the web or download documents. Use `--corpus path/to/corpus.json` to provide those sources. The JSON fields are `claim`, `seeds` (source IDs to start from), `sources` (records with `id`, `title`, `edition`, `year`, and `passages`), and optional `unavailable` IDs. Each passage has an `id`, `locator`, `text`, and optional `cites` containing source IDs. `--claim` replaces the corpus claim while keeping its sources.
 
-The bundled corpus is fictional and demonstrates conflicting editions and citation chains. Runs are bounded by `--max-calls`, `--max-sources`, `--timeout`, and `--deadline`; defaults are 24 calls, eight sources, 120 seconds per request, and 600 seconds total. `--max-calls` must be at least 14: ten calls are reserved for preliminary review and up to two draft/review rounds, including one correction per response. Research admits work only when planning and at least one source check fit with their correction attempts.
+The bundled corpus is fictional and demonstrates conflicting editions and citation chains. Runs are bounded by `--max-calls`, `--max-sources`, `--timeout`, and `--deadline`; defaults are 64 calls, eight sources, 120 seconds per request, and 600 seconds total. Without `--documents`, `--max-calls` must be at least 14: ten calls are reserved for preliminary review and up to two draft/review rounds, including one correction per response. With `--documents`, ten more calls are reserved for review and each source check budgets ten calls. Research admits work only when planning and at least one source check fit with their correction attempts.
+
+## Full-document mode
+
+`--documents DIR --claim '...'` makes the agents work from complete PDF, text, Markdown or HTML files instead of a prepared corpus. Investigators and the Reviewer get three tools, served by a local MCP subprocess: `list_sources`, `search_source` (SQLite FTS5 keywords, quoted phrases, `OR`, prefix `*`) and `read_source`. An optional `metadata.json` in the documents directory maps relative file paths to `{"edition": "...", "year": 1923}`; without it every year is 0 (unknown), so the agents cannot order sources by date. Reading is limited to the assigned document, and a passage can be quoted only after it has been opened. Tool requests and results appear in the TUI "Document tools" tab. This mode has been tested with mocked models and a real MCP subprocess, not yet with a live provider.
 
 ## Development
 
@@ -51,7 +55,7 @@ It uses the same provider environment variables and run options as the CLI. The 
 
 To inspect a saved run, use `python -m claim_chain.tui --watch runs/<run-id>`. To replay its recorded events for filming, use `python -m claim_chain.tui --replay runs/<run-id> --pace 0.25`; press Space to pause. Replay is labeled and makes no model calls.
 
-See [the five-minute demo and recording script](demo.md) and [the Great Wall source notes](episodes/great-wall-sources.md). These excerpts are prepared inputs; the agents do not download or search for sources.
+See [the five-minute demo and recording script](demo.md) and [the Great Wall source notes](episodes/great-wall-sources.md). These excerpts are prepared inputs; the agents do not download sources or search the web.
 
 ## Check provider configuration
 

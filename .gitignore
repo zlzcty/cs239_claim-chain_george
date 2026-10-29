@@ -12,3 +12,5 @@ wheels/
 # Local audit outputs and credentials
 runs/
 .env
+
+requirements.txt

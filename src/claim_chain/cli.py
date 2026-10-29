@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 import sys
+from contextlib import AsyncExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -14,10 +15,14 @@ from openai import OpenAIError
 from pydantic import SecretStr
 
 from .corpus import load_corpus
-from .models import Draft
+from .document_client import call_document_tool, connect_documents
+from .models import Corpus, Draft, Source
 from .provider import ClientConfig, ModelClient
 from .storage import Ledger, verify_review
-from .workflow import FINISH_CALL_RESERVE, MIN_CALLS, Audit, render_report
+from .workflow import (
+    DOCUMENT_JOB_CALLS, DOCUMENT_REVIEW_RESERVE, FINISH_CALL_RESERVE,
+    MIN_CALLS, Audit, render_report,
+)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -49,9 +54,10 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--corpus", type=Path, default=Path(__file__).with_name("data") / "bridge.json"
     )
-    result.add_argument("--claim", help="Replace the corpus claim")
+    result.add_argument("--documents", type=Path, help="Directory of complete PDF, text, Markdown or HTML sources")
+    result.add_argument("--claim", help="Claim and research context; required with --documents")
     result.add_argument("--output", type=Path)
-    result.add_argument("--max-calls", type=int, default=24)
+    result.add_argument("--max-calls", type=int, default=64)
     result.add_argument("--max-sources", type=int, default=8)
     result.add_argument(
         "--timeout", type=float, default=120, help="Per-request seconds (default: 120)"
@@ -70,12 +76,34 @@ def parser() -> argparse.ArgumentParser:
 
 
 async def execute(args: argparse.Namespace) -> Path:
-    corpus = load_corpus(args.corpus)
-    if args.claim:
-        corpus = corpus.model_copy(update={"claim": args.claim})
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:8]
     output = args.output or Path("runs") / run_id
     output.mkdir(parents=True, exist_ok=False)
+    async with AsyncExitStack() as resources:
+        return await execute_run(args, output, run_id, resources)
+
+
+async def execute_run(
+    args: argparse.Namespace, output: Path, run_id: str, resources: AsyncExitStack
+) -> Path:
+    documents = None
+    if args.documents:
+        if not args.claim:
+            raise ValueError("--documents requires --claim.")
+        documents = await resources.enter_async_context(
+            connect_documents(args.documents, output / "documents")
+        )
+        catalog = await call_document_tool(documents, "list_sources", {})
+        entries = catalog.get("sources")
+        if not isinstance(entries, list) or not entries:
+            raise ValueError("No supported documents found.")
+        sources = tuple(Source.model_validate(item) for item in entries)
+        corpus = Corpus(claim=args.claim, seeds=(), sources=sources)
+        (output / "documents.json").write_text(json.dumps(catalog, indent=2), encoding="utf-8")
+    else:
+        corpus = load_corpus(args.corpus)
+        if args.claim:
+            corpus = corpus.model_copy(update={"claim": args.claim})
     ledger = Ledger(output / "ledger.sqlite")
     headers = dict(value.split("=", 1) for value in args.header)
     if urlparse(args.base_url).hostname == "opencode.ai":
@@ -111,14 +139,14 @@ async def execute(args: argparse.Namespace) -> Path:
             "stream": args.stream,
         },
     )
-    (output / "corpus.json").write_bytes(args.corpus.read_bytes())
+    (output / "corpus.json").write_text(corpus.model_dump_json(indent=2), encoding="utf-8")
     print(f"Run directory: {output}\nDefault model: {config.model}", flush=True)
     client = ModelClient(config, event_callback=ledger.record)
-    audit = Audit(corpus, client, ledger)
+    audit = Audit(corpus, client, ledger, documents)
     time_limit = asyncio.timeout(args.deadline)
     try:
         async with time_limit:
-            await audit.research(args.max_sources, args.max_calls - FINISH_CALL_RESERVE)
+            await audit.research(args.max_sources, args.max_calls - FINISH_CALL_RESERVE - (DOCUMENT_REVIEW_RESERVE if documents else 0))
             await audit.finish(output)
     except BaseException as error:
         failure = {
@@ -185,6 +213,10 @@ def main() -> None:
         )
     ):
         argument_parser.error("Role model overrides cannot be empty.")
+    if args.documents and args.max_calls < FINISH_CALL_RESERVE + DOCUMENT_REVIEW_RESERVE + 2 + DOCUMENT_JOB_CALLS:
+        argument_parser.error(f"Document research requires --max-calls >= {FINISH_CALL_RESERVE + DOCUMENT_REVIEW_RESERVE + 2 + DOCUMENT_JOB_CALLS}.")
+    if args.documents and not args.claim:
+        argument_parser.error("--documents requires --claim.")
     if not args.model:
         argument_parser.error("Set --model or OPENAI_MODEL.")
     if (

@@ -1,6 +1,6 @@
 # Policy
 
-These rules describe the intended behavior. Enforcement varies: the current application exposes no agent tools and does not retrieve external sources. Prompt instructions guide model behavior but do not guarantee compliance.
+These rules describe the intended behavior. Enforcement varies: the current application exposes only local document tools (list, search and read) and does not retrieve external sources. Prompt instructions guide model behavior but do not guarantee compliance.
 
 P1. Respect access controls. Do not bypass paywalls, passwords, CAPTCHAs, or rate limits. Public copies, official previews, authorized read sessions, and user-supplied files are allowed.
 
@@ -28,6 +28,6 @@ The MVP has no confidentiality or agent-specific information-access model. Its i
 
 - P1–P3: External retrieval, consequential external actions, and agent code execution are not available in the current application. The access and execution rules apply to future capabilities.
 - P4: Prompts instruct agents to treat source text as untrusted data. The runner does not execute source instructions, but cannot guarantee that a model will resist them.
-- P5–P8: Prompts express these evidence requirements. Code checks investigator quotations against assigned passages and validates referenced IDs; it does not verify metadata, interpretation, independence, or historical truth.
+- P5–P8: Prompts express these evidence requirements. Code checks investigator quotations against passages the agent actually opened with `read_source`, restricts each Investigator to its assigned document, and rejects an earliest source with unknown year; it does not verify metadata, interpretation, independence, or historical truth.
 - P9: The runner performs preliminary review before drafting, records approval with report and snapshot hashes, and verifies the hashes. Fair interpretation remains a model judgment, not a guarantee.
 - P10: The runner records events and enforces call, source, concurrency, and time limits. Full evidence revision history and a persistent dependency queue are future capabilities.

@@ -8,7 +8,7 @@ import re
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Self
+from typing import Protocol, Self, cast
 
 from jinja2 import Environment, StrictUndefined
 from openai import AsyncOpenAI
@@ -16,6 +16,8 @@ from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
     ChatCompletionMessageParam,
     ChatCompletionSystemMessageParam,
+    ChatCompletionToolMessageParam,
+    ChatCompletionToolUnionParam,
     ChatCompletionUserMessageParam,
 )
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
@@ -23,6 +25,13 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr
 MAX_CALL_ATTEMPTS = 2
 
 EventCallback = Callable[[str, dict[str, object]], None]
+MAX_TOOL_ROUNDS = 8
+
+
+class ToolSession(Protocol):
+    definitions: list[ChatCompletionToolUnionParam]
+
+    async def execute(self, name: str, arguments: str) -> str: ...
 
 
 PROGRESS_FIELDS = {
@@ -113,6 +122,8 @@ class ModelClient:
         validator: Callable[[T], None] | None = None,
         *,
         job_id: str,
+        tools: ToolSession | None = None,
+        call_limit: int | None = None,
     ) -> T:
         """Call one isolated role context and validate its JSON against a Pydantic model."""
         system = self._system_prompt(role, stage, response_type)
@@ -125,11 +136,28 @@ class ModelClient:
         }
         previous_response = ""
         correction_message = ""
+        tool_messages = self._messages(system, user, "", "") if tools is not None else None
+        tool_operations = 0
         for correction in range(MAX_CALL_ATTEMPTS):
-            call_id = await self._reserve_call(context, correction)
-            messages = self._messages(system, user, previous_response, correction_message)
+            call_id = await self._reserve_call(context, correction, call_limit)
+            if tools is None:
+                messages = self._messages(system, user, previous_response, correction_message)
+            else:
+                assert tool_messages is not None
+                messages = tool_messages
+                if correction_message:
+                    messages.append(ChatCompletionUserMessageParam(
+                        role="user", content=correction_message
+                    ))
             try:
-                text, usage = await self._complete(messages, {**context, "call": call_id})
+                if tools is None:
+                    text, usage = await self._complete(messages, {**context, "call": call_id})
+                else:
+                    text, usage, operations, call_id = await self._complete_with_tools(
+                        messages, context, call_id, tools, call_limit, correction,
+                        tool_operations,
+                    )
+                    tool_operations += operations
             except Exception as error:
                 self._events(
                     "model_error",
@@ -140,15 +168,11 @@ class ModelClient:
                     },
                 )
                 raise
-            self._events(
-                "model_response",
-                {
-                    **context,
-                    "call": call_id,
-                    "usage": usage,
-                    "output": text,
-                },
-            )
+            if tools is None:
+                self._events(
+                    "model_response",
+                    {**context, "call": call_id, "usage": usage, "output": text},
+                )
             try:
                 result = response_type.model_validate_json(self._strip_fence(text))
                 if validator is not None:
@@ -230,8 +254,89 @@ class ModelClient:
         template = self._templates.from_string(template_path.read_text(encoding="utf-8"))
         return template.render(stage=stage, output_schema=response_type.model_json_schema())
 
-    async def _reserve_call(self, context: Mapping[str, object], correction: int) -> int:
+    async def _complete_with_tools(
+        self,
+        messages: list[ChatCompletionMessageParam],
+        context: dict[str, object],
+        call_id: int,
+        tools: ToolSession,
+        call_limit: int | None,
+        correction: int,
+        previous_operations: int,
+    ) -> tuple[str, dict[str, int | None], int, int]:
+        """Run native tool calls; non-streaming keeps each complete tool call atomic."""
+        usage: dict[str, int | None] = {"input_tokens": None, "output_tokens": None}
+        operations = 0
+        call_ceiling = min(
+            self._config.max_calls,
+            call_limit if call_limit is not None else self._config.max_calls,
+        )
+        for round_number in range(MAX_TOOL_ROUNDS + 1):
+            final_only = (
+                round_number == MAX_TOOL_ROUNDS
+                or previous_operations + operations >= 24
+                or call_id >= call_ceiling
+            )
+            response = await self._sdk.chat.completions.create(
+                model=str(context["model"]),
+                messages=messages,
+                tools=tools.definitions,
+                tool_choice="none" if final_only else "auto",
+            )
+            if not response.choices:
+                raise ValueError("Provider returned no completion choices.")
+            message = response.choices[0].message
+            usage = self._usage(response)
+            self._events("model_response", {
+                **context, "call": call_id, "usage": usage, "output": message.content or ""
+            })
+            if not message.tool_calls:
+                text = message.content or ""
+                messages.append(ChatCompletionAssistantMessageParam(role="assistant", content=text))
+                return text, usage, operations, call_id
+            if final_only:
+                text = message.content or ""
+                messages.append(ChatCompletionAssistantMessageParam(role="assistant", content=text))
+                return text, usage, operations, call_id
+            messages.append(cast(ChatCompletionMessageParam, {
+                "role": "assistant",
+                "content": message.content,
+                "tool_calls": [call.model_dump(exclude_none=True) for call in message.tool_calls],
+            }))
+            for index, tool_call in enumerate(message.tool_calls):
+                if tool_call.type == "function":
+                    name = tool_call.function.name
+                    arguments = tool_call.function.arguments
+                else:
+                    name = "custom"
+                    arguments = json.dumps(tool_call.model_dump(exclude_none=True))
+                event_context = {**context, "call": call_id, "name": name, "arguments": arguments}
+                self._events("tool_call", event_context)
+                if tool_call.type != "function":
+                    result = json.dumps({"error": "UnsupportedTool", "message": "Only function tools are supported."})
+                elif index >= 8 or previous_operations + operations >= 24:
+                    result = json.dumps({"error": "ToolLimitExceeded", "message": "Tool call limit reached."})
+                else:
+                    operations += 1
+                    try:
+                        result = await tools.execute(name, arguments)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as error:
+                        result = json.dumps({"error": type(error).__name__, "message": str(error)})
+                self._events("tool_result", {**event_context, "result": result})
+                messages.append(ChatCompletionToolMessageParam(
+                    role="tool", tool_call_id=tool_call.id, content=result
+                ))
+            call_id = await self._reserve_call(context, correction, call_limit)
+        raise AssertionError("unreachable")
+
+    async def _reserve_call(
+        self, context: Mapping[str, object], correction: int, call_limit: int | None = None
+    ) -> int:
         async with self._call_lock:
+            if call_limit is not None and self._calls >= call_limit:
+                raise CallBudgetExceeded("reserved model call budget exhausted")
             if self._calls >= self._config.max_calls:
                 raise CallBudgetExceeded("model call budget exhausted")
             self._calls += 1
@@ -292,4 +397,4 @@ class ModelClient:
         return match.group(1) if match else text
 
 
-__all__ = ["CallBudgetExceeded", "ClientConfig", "ModelClient"]
+__all__ = ["CallBudgetExceeded", "ClientConfig", "ModelClient", "ToolSession"]

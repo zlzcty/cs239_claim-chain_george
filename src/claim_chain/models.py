@@ -25,6 +25,7 @@ class Source(Message):
     edition: str
     year: int
     passages: tuple[Passage, ...]
+    manifest: dict[str, object] = Field(default_factory=dict)
 
 
 class Corpus(Message):
@@ -55,10 +56,17 @@ class Quote(Message):
     text: str = Field(min_length=1)
 
 
+class Citation(Message):
+    passage_id: str
+    reference: str = Field(min_length=1)
+    target_id: str
+
+
 class Investigation(Message):
     assessment: Assessment
     reasoning: str
     quotes: tuple[Quote, ...]
+    citations: tuple[Citation, ...] = ()
     followups: tuple[str, ...] = Field(
         description="Bare source IDs copied exactly from catalog, such as register-v1. Never questions or sentences. Empty if no follow-up is needed."
     )

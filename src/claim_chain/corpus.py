@@ -34,10 +34,8 @@ def validate_finding(source: Source, finding: Investigation, known: set[str]) ->
     if finding.assessment != "insufficient" and not finding.quotes:
         raise ValueError("An evidence assessment requires a verified quotation.")
     for citation in finding.citations:
-        if (citation.passage_id not in passages
-            or citation.reference not in passages[citation.passage_id]
-            or citation.target_id not in known):
-            raise ValueError("Citation requires an opened reference and known target.")
+        if citation.passage_id not in passages or citation.reference not in passages[citation.passage_id]:
+            raise ValueError("Citation requires an opened passage containing the reference text.")
     if not set(finding.followups) <= known:
         raise ValueError("Investigator proposed an unknown source.")
 

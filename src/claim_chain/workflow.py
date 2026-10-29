@@ -122,8 +122,11 @@ class Audit:
             "Local supplied excerpts only; no document search or extraction."
         )
 
+    def known_ids(self) -> set[str]:
+        return {s.id for s in self.corpus.sources} | set(self.corpus.unavailable)
+
     def admit(self, proposed: Sequence[Job], allowance: int) -> list[Job]:
-        known = {s.id for s in self.corpus.sources} | set(self.corpus.unavailable)
+        known = self.known_ids()
         jobs: list[Job] = []
         selected: set[str] = set()
         for job in proposed:
@@ -206,7 +209,7 @@ class Audit:
                 validator=lambda result: validate_finding(
                     tools.source(assigned_source) if tools is not None else assigned_source,
                     result,
-                    {s.id for s in self.corpus.sources} | set(self.corpus.unavailable),
+                    self.known_ids(),
                 ),
                 job_id=job.job_id,
                 tools=tools,
@@ -214,7 +217,7 @@ class Audit:
             )
         except (OpenAIError, ValueError, RuntimeError) as error:
             self.limitations.append(
-                f"Investigation rejected for {source.id}: {type(error).__name__}."
+                f"Investigation rejected for {source.id}: {type(error).__name__}: {str(error)[:200]}"
             )
             self.ledger.record(
                 "job_failed",
@@ -231,7 +234,8 @@ class Audit:
             self.ledger.record("source_inspected", source.model_dump())
         links = {
             passage.id: tuple(dict.fromkeys((*passage.cites, *(
-                link.target_id for link in finding.citations if link.passage_id == passage.id
+                link.target_id for link in finding.citations
+                if link.passage_id == passage.id and link.target_id in self.known_ids()
             )))) for passage in source.passages
         }
         source = source.model_copy(update={"passages": tuple(

@@ -181,7 +181,7 @@ class ModelClient:
             except ValueError as error:
                 self._events(
                     "model_validation_error",
-                    {**context, "call": call_id, "error_type": type(error).__name__},
+                    {**context, "call": call_id, "error_type": type(error).__name__, "error": str(error)[:300]},
                 )
                 if correction == MAX_CALL_ATTEMPTS - 1:
                     raise ValueError(

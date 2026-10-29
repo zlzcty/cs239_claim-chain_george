@@ -14,3 +14,5 @@ runs/
 .env
 
 requirements.txt
+# Local recording outline
+demo.md

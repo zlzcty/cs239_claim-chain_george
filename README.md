@@ -6,6 +6,7 @@ The repository currently contains design documents and a Python project scaffold
 
 - [app.md](app.md): application purpose and supported tasks
 - [policy.md](policy.md): rules for agents during execution
+- [agents/](agents/): role system prompts and available tools
 - [protocol.md](protocol.md): communication protocols and rules
 - [agent-execution.md](agent-execution.md): Everything about how agents running that doesn't fit in protocol.md:  role permissions, model loop, and provider records
 - [evidence.md](evidence.md): source identity, located passages, graph, and snapshots.

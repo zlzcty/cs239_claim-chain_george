@@ -2,6 +2,8 @@
 
 This specifies the intended agent loop. No model provider or agent framework is selected yet. A provider adapter supplies model calls and tool-call results to the local runner. It must support structured responses or allow the runner to validate responses before accepting them. A task gets a fresh context; shared evidence lives in the ledger, not in another agent's conversation.
 
+Role system prompts and tool lists are in [agents/research-lead.md](agents/research-lead.md), [agents/investigator.md](agents/investigator.md), and [agents/reviewer.md](agents/reviewer.md). Supply each prompt with policy.md, evidence.md, protocol.md, this execution contract, and the permitted tool definitions. The role lists are ceilings; task allowlists may narrow them.
+
 ## Role permissions
 
 | Role | Inputs | Permitted operations |

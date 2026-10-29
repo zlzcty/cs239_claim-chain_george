@@ -4,7 +4,7 @@ import hashlib
 from collections.abc import Sequence
 from pathlib import Path
 
-from .models import Corpus, Investigation, Source
+from .models import Citation, Corpus, Investigation, Source
 
 
 def load_corpus(path: Path) -> Corpus:
@@ -26,18 +26,27 @@ def load_corpus(path: Path) -> Corpus:
     return corpus
 
 
+def _squeeze(text: str) -> str:
+    return " ".join(text.split())
+
+
 def validate_finding(source: Source, finding: Investigation, known: set[str]) -> None:
     passages = {p.id: p.text for p in source.passages}
     for quote in finding.quotes:
-        if quote.passage_id not in passages or quote.text not in passages[quote.passage_id]:
+        if quote.passage_id not in passages or _squeeze(quote.text) not in _squeeze(passages[quote.passage_id]):
             raise ValueError(f"Unverified quotation: {quote.passage_id}")
     if finding.assessment != "insufficient" and not finding.quotes:
         raise ValueError("An evidence assessment requires a verified quotation.")
-    for citation in finding.citations:
-        if citation.passage_id not in passages or citation.reference not in passages[citation.passage_id]:
-            raise ValueError("Citation requires an opened passage containing the reference text.")
     if not set(finding.followups) <= known:
         raise ValueError("Investigator proposed an unknown source.")
+
+
+def verified_citations(source: Source, finding: Investigation) -> tuple[Citation, ...]:
+    """Keep citations whose reference text is verbatim in an opened passage."""
+    passages = {p.id: p.text for p in source.passages}
+    return tuple(
+        c for c in finding.citations if c.passage_id in passages and c.reference in passages[c.passage_id]
+    )
 
 
 def digest(text: str | bytes) -> str:

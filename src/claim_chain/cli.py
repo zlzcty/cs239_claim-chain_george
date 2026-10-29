@@ -52,6 +52,13 @@ def parser() -> argparse.ArgumentParser:
         help="Additional provider header; repeatable",
     )
     result.add_argument(
+        "--no-thinking",
+        action="append",
+        default=[],
+        choices=["research-lead", "investigator", "reviewer"],
+        help="Disable provider thinking for a role (sends thinking=disabled); repeatable",
+    )
+    result.add_argument(
         "--corpus", type=Path, default=Path(__file__).with_name("data") / "bridge.json"
     )
     result.add_argument("--documents", type=Path, help="Directory of complete PDF, text, Markdown or HTML sources")
@@ -116,6 +123,7 @@ async def execute_run(
         max_calls=args.max_calls,
         headers=headers,
         stream=args.stream,
+        no_thinking_roles=frozenset(args.no_thinking),
         role_models={
             role: model
             for role, model in (

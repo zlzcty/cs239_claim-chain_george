@@ -81,6 +81,7 @@ class ClientConfig(BaseModel):
     headers: dict[str, str] = Field(default_factory=dict)
     stream: bool = False
     role_models: dict[str, str] = Field(default_factory=dict)
+    no_thinking_roles: frozenset[str] = frozenset()
 
 
 class CallBudgetExceeded(RuntimeError):
@@ -194,13 +195,18 @@ class ModelClient:
                 )
         raise AssertionError("unreachable")
 
+    def _extra_body(self, context: dict[str, object]) -> dict[str, object] | None:
+        if context["role"] in self._config.no_thinking_roles:
+            return {"thinking": {"type": "disabled"}}
+        return None
+
     async def _complete(
         self, messages: list[ChatCompletionMessageParam], context: dict[str, object]
     ) -> tuple[str, dict[str, int | None]]:
         if self._config.stream:
             return await self._stream(messages, context)
         response = await self._sdk.chat.completions.create(
-            model=str(context["model"]), messages=messages
+            model=str(context["model"]), messages=messages, extra_body=self._extra_body(context)
         )
         if not response.choices:
             raise ValueError("Provider returned no completion choices.")
@@ -214,6 +220,7 @@ class ModelClient:
             messages=messages,
             stream=True,
             stream_options={"include_usage": True},
+            extra_body=self._extra_body(context),
         )
         text = ""
         usage: dict[str, int | None] = {"input_tokens": None, "output_tokens": None}
@@ -282,6 +289,7 @@ class ModelClient:
                 messages=messages,
                 tools=tools.definitions,
                 tool_choice="none" if final_only else "auto",
+                extra_body=self._extra_body(context),
             )
             if not response.choices:
                 raise ValueError("Provider returned no completion choices.")

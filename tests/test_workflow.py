@@ -9,10 +9,11 @@ import pytest
 from openai import APIConnectionError, APITimeoutError, RateLimitError
 from pydantic import BaseModel
 
-from claim_chain.corpus import citation_cycles, digest, validate_finding
+from claim_chain.corpus import citation_cycles, digest, validate_finding, verified_citations
 from claim_chain.models import (
     Corpus,
     Draft,
+    Citation,
     Investigation,
     Job,
     Passage,
@@ -480,3 +481,35 @@ async def test_minimum_budget_covers_research_and_two_reviews_with_all_correctio
         assert list(outputs) == []
     finally:
         ledger.close()
+
+
+def test_verified_citations_drop_references_missing_from_opened_text() -> None:
+    source = Source(
+        id="a", title="A", edition="1", year=1900,
+        passages=(Passage(id="p1", locator="1", text="See the Register for details."),),
+    )
+    kept = Citation(passage_id="p1", reference="the Register", target_id="register")
+    finding = Investigation(
+        assessment="insufficient", reasoning="r", quotes=(), followups=(),
+        citations=(
+            kept,
+            Citation(passage_id="p1", reference="Louis XVIII", target_id="unresolved"),
+            Citation(passage_id="p2", reference="the Register", target_id="register"),
+        ),
+    )
+    assert verified_citations(source, finding) == (kept,)
+
+
+def test_quotes_match_ignoring_whitespace_differences() -> None:
+    source = Source(
+        id="a", title="A", edition="1", year=1900,
+        passages=(Passage(id="p1", locator="1", text="Translated  from\nRousseau, p. 262."),),
+    )
+    finding = Investigation(
+        assessment="supported", reasoning="r", followups=(),
+        quotes=(Quote(passage_id="p1", text="Translated from Rousseau, p. 262."),),
+    )
+    validate_finding(source, finding, set())
+    bad = finding.model_copy(update={"quotes": (Quote(passage_id="p1", text="Translated from Voltaire"),)})
+    with pytest.raises(ValueError, match="Unverified quotation"):
+        validate_finding(source, bad, set())

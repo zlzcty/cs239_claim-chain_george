@@ -10,7 +10,7 @@ from mcp import ClientSession
 from openai import OpenAIError
 from pydantic import BaseModel
 
-from .corpus import citation_cycles, digest, validate_finding
+from .corpus import citation_cycles, digest, validate_finding, verified_citations
 from .document_client import DocumentTools, document_definitions
 from .models import Corpus, Draft, Investigation, Job, Plan, Preliminary, Review, Source
 from .provider import MAX_CALL_ATTEMPTS, ToolSession
@@ -232,6 +232,13 @@ class Audit:
             source = tools.source(source)
             self.inspected[source.id] = source
             self.ledger.record("source_inspected", source.model_dump())
+        verified = verified_citations(source, finding)
+        if len(verified) < len(finding.citations):
+            self.limitations.append(
+                f"{len(finding.citations) - len(verified)} citation(s) from {source.id} dropped: "
+                "reference text not found in an opened passage."
+            )
+            finding = finding.model_copy(update={"citations": verified})
         links = {
             passage.id: tuple(dict.fromkeys((*passage.cites, *(
                 link.target_id for link in finding.citations

@@ -13,7 +13,7 @@ def test_ingests_sources_and_returns_search_snippets_and_passages(tmp_path: Path
     nested.mkdir(parents=True)
     (nested / "guide.md").write_text("First paragraph.\n\nEvidence lives here.", encoding="utf-8")
     (documents / "page.html").write_text(
-        "<h1>Title</h1><p>Useful HTML evidence.</p><script>hidden token</script>",
+        "<nav>menu links</nav><h1>Title</h1><p>Useful HTML evidence.</p><script>hidden token</script>",
         encoding="utf-8",
     )
     store = DocumentStore(documents, tmp_path / "archive")
@@ -43,7 +43,9 @@ def test_ingests_sources_and_returns_search_snippets_and_passages(tmp_path: Path
         }
     ]
     html_source = next(source for source in listed if source["title"] == "page.html")
-    assert "hidden" not in store.read_source(html_source["id"])["passages"][0]["text"]
+    html_text = store.read_source(html_source["id"])["passages"][0]["text"]
+    assert "hidden" not in html_text
+    assert "menu links" not in html_text
 
 
 def test_pdf_passages_keep_page_locations(tmp_path: Path) -> None:

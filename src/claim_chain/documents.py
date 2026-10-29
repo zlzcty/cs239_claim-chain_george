@@ -18,6 +18,9 @@ _CHUNK_SIZE = 3000
 _PDF: Any = importlib.import_module("pymupdf")
 
 
+_HIDDEN_TAGS = {"script", "style", "noscript", "nav", "header", "footer", "aside", "form", "button", "svg"}
+
+
 class _TextExtractor(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -25,13 +28,13 @@ class _TextExtractor(HTMLParser):
         self.hidden = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in {"script", "style", "noscript"}:
+        if tag in _HIDDEN_TAGS:
             self.hidden += 1
         elif tag in {"p", "div", "li", "br", "h1", "h2", "h3", "tr"}:
             self.parts.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in {"script", "style", "noscript"} and self.hidden:
+        if tag in _HIDDEN_TAGS and self.hidden:
             self.hidden -= 1
         elif tag in {"p", "div", "li", "br", "h1", "h2", "h3", "tr"}:
             self.parts.append("\n")

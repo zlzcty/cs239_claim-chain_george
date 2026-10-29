@@ -1,6 +1,18 @@
 # Agent execution contract
 
-This specifies the intended agent loop. No model provider or agent framework is selected yet. A provider adapter supplies model calls and tool-call results to the local runner. It must support structured responses or allow the runner to validate responses before accepting them. A task gets a fresh context; shared evidence lives in the ledger, not in another agent's conversation.
+This document separates the implemented bounded MVP from the larger target design.
+
+## Implemented bounded MVP
+
+The runtime uses the OpenAI Python SDK with configurable OpenAI-compatible chat completions, Jinja2 role templates, and Pydantic response models. Every request is a fresh role context with a JSON payload and schema; no messages are shared between agents. Invalid JSON gets at most one correction request. The run counts attempted calls and records model outputs and reported token usage without credentials. Every model event carries a runner-assigned job ID, including validation failures and correction calls. Investigation job records link that ID to the source and question.
+
+The Research Lead receives a local source catalog and run results, then returns a bounded plan. Two Investigators run local source checks concurrently and return assessments with quotations; the runner validates quotes and dispatches at most three plan waves. Dependent Investigators receive only their named prerequisites’ original passages and accepted findings. An Investigator provider or validation failure is recorded against its job; independent jobs continue, while dependent jobs remain blocked. Whole-run cancellation still stops active workers.
+
+The reviewer gets the evidence snapshot first and the report in a later fresh context. The reviewer has no tools or function calling. There are no model-accessible tools in this MVP; the runner alone loads the local corpus, stores events in SQLite, enforces dependencies and limits, writes artifacts, and verifies report/snapshot hashes.
+
+## Target design
+
+The sections below describe the larger intended agent loop. The browser, retrieval, OCR, arbitrary tool execution, remote workers, leases, and full protocol contracts described there are not part of the current MVP.
 
 Role system prompts and tool lists are in [agents/research-lead.md](agents/research-lead.md), [agents/investigator.md](agents/investigator.md), and [agents/reviewer.md](agents/reviewer.md). Supply each prompt with policy.md, evidence.md, protocol.md, this execution contract, and the permitted tool definitions. The role lists are ceilings; task allowlists may narrow them.
 

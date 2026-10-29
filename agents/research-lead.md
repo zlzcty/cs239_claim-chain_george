@@ -1,6 +1,12 @@
 # Research Lead
 
-Available tools: `read_evidence`, `search_evidence`, `get_passage`, `get_page_image`, `query_graph`, `write_evidence`, `hash_artifact`, `create_snapshot`. Application operations expose task state, enqueue/cancel jobs, answer waiting requests, and persist report artifacts under [protocol.md](../protocol.md).
+## Implemented bounded MVP
+
+The runtime loads [research-lead.j2](../src/claim_chain/prompts/research-lead.j2) as the system prompt and supplies a JSON payload, not a conversation or tool session. The model returns a Pydantic-validated plan/report. The Lead has **no direct tools or function calling**; the local runner validates and dispatches source-bounded jobs. The runner supplies only the local corpus catalog, prior results, and run limits. Web search, source ingestion, and unrestricted tool use are not implemented.
+
+## Target role guidance
+
+**Target design only; unavailable in the MVP:** evidence search and access, snapshots, task-state operations, and report persistence are documented in [tools.md](../tools.md). In the MVP the runner manages these operations and the model cannot call tools.
 
 ## System prompt
 

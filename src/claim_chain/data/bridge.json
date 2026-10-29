@@ -1,0 +1,43 @@
+{
+  "claim": "The town's north bridge opened in 1920.",
+  "seeds": ["anniversary-leaflet", "harbor-notes"],
+  "sources": [
+    {
+      "id": "anniversary-leaflet",
+      "title": "Northbridge anniversary leaflet",
+      "edition": "1924 print",
+      "year": 1924,
+      "passages": [
+        {"id": "leaflet-p2", "locator": "p. 2", "text": "The north bridge opened in 1920, as recorded in the Town Register.", "cites": ["register-v1"]}
+      ]
+    },
+    {
+      "id": "harbor-notes",
+      "title": "Harbor engineer's notes",
+      "edition": "1925 notebook",
+      "year": 1925,
+      "passages": [
+        {"id": "harbor-p1", "locator": "p. 1", "text": "The north bridge opened in 1920.", "cites": ["register-v1", "register-v2"]}
+      ]
+    },
+    {
+      "id": "register-v1",
+      "title": "Town Register",
+      "edition": "first edition",
+      "year": 1923,
+      "passages": [
+        {"id": "register-v1-entry-41", "locator": "entry 41", "text": "Construction ended in 1921. The north bridge opened to traffic on 3 May 1922.", "cites": []}
+      ]
+    },
+    {
+      "id": "register-v2",
+      "title": "Town Register",
+      "edition": "revised edition",
+      "year": 1926,
+      "passages": [
+        {"id": "register-v2-entry-41", "locator": "entry 41", "text": "The north bridge opened in 1920.", "cites": ["harbor-notes"]}
+      ]
+    }
+  ],
+  "unavailable": ["county-engineering-file"]
+}

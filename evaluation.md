@@ -1,6 +1,8 @@
 # Evaluation plan
 
-The repository does not yet contain an implementation or fixtures. This plan defines what to build and compare; it does not claim results.
+The current MVP uses live model calls with the fictional local corpus in `src/claim_chain/data/bridge.json`. The runner implements bounded planning, two concurrent investigators, quote validation, preliminary review, report review, and hash checks. It does not implement live retrieval or the full target tool framework. This small fixture does not establish model or real-world accuracy; no comparative performance results are claimed.
+
+## Target evaluation design (planned, not implemented)
 
 ## Replayable source set
 

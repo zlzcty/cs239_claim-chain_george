@@ -1,6 +1,12 @@
 # Investigator
 
-Available tools: all research tools in [tools.md](../tools.md); `write_evidence`, `read_evidence`, `search_evidence`, `get_passage`, `get_page_image`, `query_graph`, `hash_artifact`; `execute_python` only under P3 and the task allowlist.
+## Implemented bounded MVP
+
+The runtime loads [investigator.j2](../src/claim_chain/prompts/investigator.j2) as the system prompt and supplies one local source plus a question in a fresh JSON context. A dependent task also receives its named prerequisites’ passages and accepted findings; unrelated findings are excluded. Quotes must come from the assigned source. The model returns a Pydantic-validated assessment and verbatim quotes. Investigators have **no direct tools or function calling**; the runner validates quotes and controls source inspection. They cannot browse, fetch, or execute code.
+
+## Target role guidance
+
+**Target design only; unavailable in the MVP:** research, evidence, and code-execution tools are listed in [tools.md](../tools.md). The local runner supplies one bounded source directly; the model cannot call tools.
 
 ## System prompt
 

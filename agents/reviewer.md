@@ -1,6 +1,12 @@
 # Review Agent
 
-Available tools: `read_evidence`, `search_evidence`, `get_passage`, `get_page_image`, `query_graph`, `hash_artifact`; research tools and `execute_python` only when allowed by the review allocation, research cutoff, and P3. Application operations persist preliminary assessments and review artifacts. Initial evidence access uses the restricted snapshot view in [agent-execution.md](../agent-execution.md).
+## Implemented bounded MVP
+
+The runtime loads [reviewer.j2](../src/claim_chain/prompts/reviewer.j2) as the system prompt. A fresh model context first receives the evidence snapshot for a preliminary assessment, then another fresh context receives the report and that assessment. The reviewer has **no direct tools or function calling**. The runner binds approval to the report and snapshot hashes; this checks version identity, not independent research.
+
+## Target role guidance
+
+**Target design only; unavailable in the MVP:** review-time evidence and research tools are listed in [tools.md](../tools.md). The MVP runner supplies the evidence snapshot and draft in separate calls; the reviewer cannot call tools.
 
 ## System prompt
 

@@ -1,0 +1,161 @@
+"""Command-line configuration and run lifecycle."""
+
+import argparse
+import asyncio
+import json
+import os
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+from urllib.parse import urlparse
+from uuid import uuid4
+
+from openai import OpenAIError
+from pydantic import SecretStr
+
+from .corpus import load_corpus
+from .models import Draft
+from .provider import ClientConfig, ModelClient
+from .storage import Ledger, verify_review
+from .workflow import FINISH_CALL_RESERVE, MIN_CALLS, Audit, render_report
+
+
+def parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser(
+        description="Audit a claim using live OpenAI-compatible models and local evidence."
+    )
+    result.add_argument(
+        "--model", default=os.getenv("OPENAI_MODEL"), help="Provider model ID, or OPENAI_MODEL"
+    )
+    result.add_argument(
+        "--base-url", default=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    )
+    result.add_argument(
+        "--api-key-env", default="OPENAI_API_KEY", help="Environment variable holding the API key"
+    )
+    result.add_argument(
+        "--header",
+        action="append",
+        default=[],
+        metavar="NAME=VALUE",
+        help="Additional provider header; repeatable",
+    )
+    result.add_argument(
+        "--corpus", type=Path, default=Path(__file__).with_name("data") / "bridge.json"
+    )
+    result.add_argument("--claim", help="Replace the corpus claim")
+    result.add_argument("--output", type=Path)
+    result.add_argument("--max-calls", type=int, default=24)
+    result.add_argument("--max-sources", type=int, default=8)
+    result.add_argument("--timeout", type=float, default=60, help="Per-request seconds")
+    result.add_argument("--deadline", type=float, default=240, help="Whole-run seconds")
+    result.add_argument("--verify", type=Path, metavar="RUN_DIRECTORY")
+    return result
+
+
+async def execute(args: argparse.Namespace) -> Path:
+    corpus = load_corpus(args.corpus)
+    if args.claim:
+        corpus = corpus.model_copy(update={"claim": args.claim})
+    run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:8]
+    output = args.output or Path("runs") / run_id
+    output.mkdir(parents=True, exist_ok=False)
+    ledger = Ledger(output / "ledger.sqlite")
+    headers = dict(value.split("=", 1) for value in args.header)
+    if urlparse(args.base_url).hostname == "opencode.ai":
+        headers.setdefault("x-opencode-session", run_id)
+    config = ClientConfig(
+        base_url=args.base_url,
+        api_key=SecretStr(os.getenv(args.api_key_env, "local-no-key")),
+        model=args.model,
+        timeout=args.timeout,
+        max_calls=args.max_calls,
+        headers=headers,
+    )
+    ledger.record(
+        "run_started",
+        {
+            "model": config.model,
+            "claim": corpus.claim,
+            "max_calls": args.max_calls,
+            "max_sources": args.max_sources,
+        },
+    )
+    (output / "corpus.json").write_bytes(args.corpus.read_bytes())
+    print(f"Run directory: {output}\nModel: {config.model}", flush=True)
+    client = ModelClient(config, event_callback=ledger.record)
+    audit = Audit(corpus, client, ledger)
+    try:
+        async with asyncio.timeout(args.deadline):
+            await audit.research(args.max_sources, args.max_calls - FINISH_CALL_RESERVE)
+            await audit.finish(output)
+    except BaseException as error:
+        ledger.record("run_failed", {"error_type": type(error).__name__, "calls": client.calls})
+        (output / "status.json").write_text(
+            json.dumps({"approved": False, "error_type": type(error).__name__})
+        )
+        if not (output / "report.md").exists():
+            partial = Draft(
+                assessment="insufficient",
+                reasoning="Run interrupted before a reviewed conclusion was available.",
+                decisive_passages=(),
+                earliest_source_id=None,
+                limitations=(type(error).__name__,),
+            )
+            report = render_report(
+                corpus.claim, partial, tuple(audit.inspected.values()), audit.limitations
+            )
+            (output / "report.md").write_bytes(
+                ("UNAPPROVED PARTIAL REPORT\n\n" + report).encode("utf-8")
+            )
+        print(
+            f"Run incomplete; preserved artifacts at {output}. No approval granted.",
+            file=sys.stderr,
+        )
+        raise
+    finally:
+        await client.close()
+        ledger.close()
+    print(f"Report: {output / 'report.md'}\nReview: {output / 'review.json'}", flush=True)
+    return output
+
+
+def main() -> None:
+    argument_parser = parser()
+    args = argument_parser.parse_args()
+    if args.verify:
+        try:
+            valid = verify_review(args.verify)
+        except OSError, ValueError, TypeError:
+            valid = False
+        print(
+            "APPROVED: report and snapshot match review."
+            if valid
+            else "UNAPPROVED: missing review, rejected report, or changed bytes."
+        )
+        raise SystemExit(0 if valid else 1)
+    if not args.model:
+        argument_parser.error("Set --model or OPENAI_MODEL.")
+    if (
+        args.max_calls < MIN_CALLS
+        or args.max_sources < 1
+        or args.timeout <= 0
+        or args.deadline <= 0
+    ):
+        argument_parser.error(
+            f"Require max-calls >= {MIN_CALLS}, max-sources >= 1, and positive timeouts."
+        )
+    if any("=" not in value or not value.split("=", 1)[0].strip() for value in args.header):
+        argument_parser.error("Headers must use NAME=VALUE.")
+    if args.base_url == "https://api.openai.com/v1" and not os.getenv(args.api_key_env):
+        argument_parser.error(f"Set the API key environment variable {args.api_key_env}.")
+    try:
+        asyncio.run(execute(args))
+    except (OpenAIError, OSError, ValueError, RuntimeError, TimeoutError) as error:
+        print(
+            f"Audit failed ({type(error).__name__}). Check configuration and the run ledger.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from None
+    except KeyboardInterrupt:
+        raise SystemExit(130) from None
